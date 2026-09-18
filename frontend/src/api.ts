@@ -1,4 +1,4 @@
-const BASE = '/api'
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '/api'
 
 /** 로그인 없는 익명 ID (브라우저별 1개). 헌화 중복 방지·내 묘비 식별용. */
 export function anonId(): string {

@@ -26,7 +26,7 @@ from parser import parse_file_meta
 app = FastAPI(title="kakao-coach")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-UPLOAD_DIR = Path(__file__).parent / "data" / "uploads"
+UPLOAD_DIR = db.DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 _HL = re.compile(r"<highlight>(.*?)</highlight>", re.S)
 

@@ -1,0 +1,27 @@
+# Render Blueprint — GitHub 연동 시 자동 배포. Dashboard > New > Blueprint 로 이 파일을 선택.
+services:
+  - type: web
+    name: breakup-funeral-api
+    runtime: python
+    plan: free                 # free는 15분 유휴 시 잠들고 재시작 시 디스크 초기화. 데모 전엔 한 번 깨워두기.
+    rootDir: backend
+    buildCommand: pip install -r ../requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /docs
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PYTHONIOENCODING
+        value: utf-8
+      - key: ANTHROPIC_API_KEY
+        sync: false            # Dashboard에서 직접 입력
+      - key: ANTHROPIC_WORKSPACE_ID
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-opus-5
+      - key: DATA_DIR
+        value: /var/data       # 유료 플랜에서 disk를 붙이면 영구 저장. free면 /tmp 대체됨
+    # disk:                     # 영구 저장이 필요하면 주석 해제 (starter 플랜 이상)
+    #   name: data
+    #   mountPath: /var/data
+    #   sizeGB: 1

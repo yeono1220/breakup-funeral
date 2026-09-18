@@ -8,7 +8,25 @@ from typing import Iterable
 
 from parser import Message
 
-DB_PATH = Path(__file__).parent / "data" / "coach.db"
+import os as _os
+
+
+def _data_dir() -> Path:
+    env = _os.getenv("DATA_DIR")
+    cands = [Path(env)] if env else []
+    cands += [Path(__file__).parent / "data", Path("/tmp/breakup-funeral")]
+    for c in cands:
+        try:
+            c.mkdir(parents=True, exist_ok=True)
+            (c / ".w").write_text("1"); (c / ".w").unlink()
+            return c
+        except OSError:
+            continue
+    return Path(__file__).parent / "data"
+
+
+DATA_DIR = _data_dir()
+DB_PATH = DATA_DIR / "coach.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (

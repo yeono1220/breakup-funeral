@@ -1,0 +1,4 @@
+-r requirements.txt
+# local only: KakaoTalk PC automation PoC / screenshots
+pywinauto>=0.6.9
+pillow>=10
