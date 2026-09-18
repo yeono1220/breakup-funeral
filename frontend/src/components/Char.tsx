@@ -47,12 +47,12 @@ export function Mascot({ mood = 'smile', size = 150, lying = false, drops, class
         )}
 
         {/* 몸통 (치마) */}
-        <path d="M 140 220 C 120 280, 80 410, 80 430 Q 110 420, 140 440 Q 170 455, 200 435 Q 230 420, 260 445 Q 290 455, 320 430 C 320 410, 280 280, 260 220 Z" fill={body} />
+        <path d="M 140 220 C 120 280, 80 410, 80 430 Q 110 420, 140 440 Q 170 455, 200 435 Q 230 420, 260 445 Q 290 455, 320 430 C 320 410, 280 280, 260 220 Z" fill={body} stroke={gray ? '#B9BEC6' : '#D3DBE3'} strokeWidth="3" strokeLinejoin="round" />
         <path d="M 180 240 Q 170 340, 150 435" fill="none" stroke={shade} strokeWidth="4" opacity="0.6" />
         <path d="M 220 240 Q 230 340, 250 435" fill="none" stroke={shade} strokeWidth="4" opacity="0.6" />
 
         {/* 머리 */}
-        <circle cx="200" cy="130" r="85" fill={body} />
+        <circle cx="200" cy="130" r="85" fill={body} stroke={gray ? '#B9BEC6' : '#D3DBE3'} strokeWidth="3" />
         <circle cx="170" cy="100" r="70" fill="#ffffff" opacity={gray ? 0.3 : 0.5} clipPath={`url(#${gid}-head)`} />
 
         {/* 볼터치 */}
