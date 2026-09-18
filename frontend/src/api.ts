@@ -66,6 +66,8 @@ export type Relationship = {
     them: { score: number | null; parts: { label: string; score: number; weight: number }[] }
     facts: string[]; n_baseline_people: number; low_confidence: boolean }
   last_message: Msg | null
+  causes?: { causes: { key: string; label: string; pct: number; evidence: string }[]; note: string | null
+    peak: { from: string; to: string; n: number; per_day: number } | null; last: { from: string; to: string; n: number; per_day: number } | null; overlap: number; silence_days: number }
   user_context?: { ending: Ending | null; ending_label: string | null; context: string | null; ended_at: string | null; started_at: string | null; suggested_start: string | null; overrides_stage: boolean }
 }
 export type Compare = { a: string; b: string; rows: Record<string, null | { n_messages: number; temp: number | null; my_reply_min: number | null; their_reply_min: number | null; my_start_share: number | null; my_chars_share: number | null; my_avg_len: number; my_kkk: number; late_night: number }> }

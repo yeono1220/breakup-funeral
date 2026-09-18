@@ -45,18 +45,12 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
     return `온도 ${data.temperature.temp ?? '–'}°`
   }, [data, uc])
 
-  // ---- 사망 원인 % (선톡 / 읽씹 / 대화량)
-  const causes = useMemo(() => {
-    const starts = data.symmetry.bars.find(b => b.key === 'starts')?.share ?? 0.5
-    const comp = data.temperature.components
-    const raw = [
-      { label: '유저의 과다 선톡', v: Math.max(0, starts - 0.5) * 2, color: 'linear-gradient(90deg,#D96A5E,#E88B80)' },
-      { label: '상대의 읽씹 (응답 둔화)', v: comp.R ? 1 - comp.R.value : 0.3, color: 'linear-gradient(90deg,#7C8894,#AEB9C4)' },
-      { label: '대화량 급감', v: comp.F ? 1 - comp.F.value : 0.2, color: 'linear-gradient(90deg,#8B7BB8,#B4A7D6)' },
-    ]
-    const sum = raw.reduce((a, b) => a + b.v, 0) || 1
-    return raw.map(r => ({ ...r, pct: Math.round((r.v / sum) * 100) }))
-  }, [data])
+  // ---- 사망 원인 (백엔드: 전성기 4주 vs 말기 4주 비교)
+  const COLORS: Record<string, string> = {
+    their_reply: 'linear-gradient(90deg,#7C8894,#AEB9C4)', my_reply: 'linear-gradient(90deg,#D96A5E,#E88B80)', volume: 'linear-gradient(90deg,#8B7BB8,#B4A7D6)',
+    my_start: 'linear-gradient(90deg,#D96A5E,#F0A090)', their_effort: 'linear-gradient(90deg,#C9B268,#E8D9A0)', silence: 'linear-gradient(90deg,#4C566A,#7C8894)',
+  }
+  const causes = (data.causes?.causes ?? []).map(c => ({ ...c, color: COLORS[c.key] ?? 'var(--rose)' }))
 
   // ---- 낙하 곡선 path
   const path = useMemo(() => {
@@ -112,14 +106,21 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
             </div>
             <div className="cert">
               <div className="cert-t">🧾 사망 원인 진단서</div>
+              {data.causes?.note && <div className="ctx-banner" style={{ marginBottom: 10 }}>{data.causes.note}</div>}
               {causes.map(c => (
-                <div className="cert-row" key={c.label}>
-                  <span className="cr-lbl">{c.label}</span>
-                  <div className="cr-track"><div className="cr-fill" style={{ width: drawn ? `${c.pct}%` : 0, background: c.color }} /></div>
-                  <span className="cr-val">{c.pct}%</span>
+                <div key={c.key} style={{ marginBottom: 10 }}>
+                  <div className="cert-row" style={{ marginBottom: 2 }}>
+                    <span className="cr-lbl">{c.label}</span>
+                    <div className="cr-track"><div className="cr-fill" style={{ width: drawn ? `${c.pct}%` : 0, background: c.color }} /></div>
+                    <span className="cr-val">{c.pct}%</span>
+                  </div>
+                  <div className="tiny faint" style={{ paddingLeft: 2 }}>{c.evidence}</div>
                 </div>
               ))}
-              <div className="cert-note">선톡 = 대화 시작 중 내가 건 비율({Math.round((data.symmetry.bars.find(b => b.key === 'starts')?.share ?? 0.5) * 100)}%), 읽씹 = 최근 14일 상대 응답성, 대화량 = 평시 대비 최근 빈도. 전부 코드가 셈. 상대 마음이 아니라 관계의 모양.</div>
+              {causes.length === 0 && <div className="muted tiny">표본이 적어 원인 분석을 못 했어요.</div>}
+              {data.causes?.peak && data.causes.last && (
+                <div className="cert-note">전성기 {fmtShort(data.causes.peak.from)}~{fmtShort(data.causes.peak.to)} (하루 {data.causes.peak.per_day}개) vs 말기 {fmtShort(data.causes.last.from)}~{fmtShort(data.causes.last.to)} (하루 {data.causes.last.per_day}개){data.causes.silence_days >= 3 ? ` · 이후 ${data.causes.silence_days}일 침묵` : ''}. 전부 코드가 셈 — 상대 마음이 아니라 관계의 모양.</div>
+              )}
             </div>
             {receipt && (
               <div className="receipt">

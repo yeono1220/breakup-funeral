@@ -13,6 +13,8 @@ from pydantic import BaseModel
 
 import db
 import relationship
+from core.causes import diagnose as diagnose_causes
+from core.sessions import relationship_messages as _rel_msgs
 import stats
 from coach import Coach
 from funeral import Funeral
@@ -177,6 +179,8 @@ async def relationship_view(person: str):
     r["user_context"] = {"ending": ending, "ending_label": ENDING_LABEL.get(ending), "context": p.get("context"),
                          "ended_at": p.get("ended_at"), "started_at": p.get("started_at"), "suggested_start": first_warm,
                          "overrides_stage": ending in ENDED}
+    all_msgs = db.all_messages(con)
+    r["causes"] = diagnose_causes(_rel_msgs(all_msgs, me, person), me, person, db.now_ts(con), r["user_context"])
     if ending in ENDED:
         r["stages"]["data_lens"] = r["stages"]["lens"]
         r["stages"]["data_label"] = r["stages"]["current_label"]
