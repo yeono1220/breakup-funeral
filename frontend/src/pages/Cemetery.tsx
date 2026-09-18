@@ -3,6 +3,7 @@ import type { CemeteryData, Comment, Tomb } from '../api'
 import { store, usingSupabase } from '../cemeteryStore'
 import { Modal, useToast } from '../components/ui'
 import { Icon } from '../components/Icons'
+import { CemeteryScene, SCENE_CAP } from '../components/CemeteryScene'
 
 /* 묘비 그리드: 자동 채움 + '내 관계' 묘비는 두 칸 (한 열뿐일 땐 span 해제) */
 const GRID_CSS = `
@@ -15,6 +16,7 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
   const toast = useToast()
   const [data, setData] = useState<CemeteryData | null>(null)
   const [guest, setGuest] = useState<Tomb | null>(null)
+  const [sel, setSel] = useState<Tomb | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const load = () => store.list().then(setData).catch(e => setErr(String(e)))
   useEffect(() => { load() }, [])
@@ -24,6 +26,7 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
     try {
       const r = await store.flower(t.id)
       setData(d => d && { ...d, tombs: d.tombs.map(x => x.id === t.id ? { ...x, flowers: r.flowers, flowered: true } : x), top: d.top.map(x => x.id === t.id ? { ...x, flowers: r.flowers } : x) })
+      setSel(s => s && s.id === t.id ? { ...s, flowers: r.flowers, flowered: true } : s)
       toast(r.already ? '이미 헌화했어' : '헌화했어')
     } catch { toast('헌화 실패') }
   }
@@ -49,12 +52,16 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
         {err && <div className="ctx-banner">공동묘지 서버에 연결 못 했어 ({err.slice(0, 60)})</div>}
         {data && (
           <>
-            <div className="legend-top reveal" style={{ ['--i' as any]: 2 }}>
+            <div className="reveal" style={{ ['--i' as any]: 2 }}>
+              <CemeteryScene tombs={data.tombs} selected={sel} onSelect={setSel} onFlower={hwa} onGuest={setGuest} />
+            </div>
+            <div className="legend-top reveal" style={{ ['--i' as any]: 3 }}>
               <div className="lt-h">전설의 묘지 TOP 3</div>
               {data.top.map((t, i) => (
                 <div className="legend-row" key={t.id}><div className={'legend-rank r' + (i + 1)}>{i + 1}</div><div className="legend-body"><div className="lb-t">{t.epitaph}</div><div className="lb-m">묘비 #{t.id} · {t.kind === 'curse' ? '저주봉인' : '헌화'}{t.hanja && <span className="legend-amulet">符 {t.hanja}</span>}{t.days ? ` · 향년 ${t.days}일` : ''}</div></div><div className="legend-stat">💐 <span className="num">{t.flowers.toLocaleString()}</span></div></div>
               ))}
             </div>
+            <div className="tiny muted" style={{ margin: '28px 0 10px' }}>전체 목록{data.tombs.length > SCENE_CAP ? ` · 묘지엔 ${SCENE_CAP}기까지만 보여, 나머지는 여기서` : ''}</div>
             <div className="tomb-grid tg-flow">
               {data.tombs.map((t, i) => (
                 <div
