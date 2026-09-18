@@ -357,6 +357,38 @@ async def summon(body: ChatBody):
     return await _funeral().summon(body.messages)
 
 
+@app.get("/epitaph")
+async def epitaph(refresh: bool = False):
+    """공동묘지 묘비 제목(어그로 한 줄). 사용자 진술(persona)이 바뀌면 다시 만든다."""
+    import hashlib
+    con = _con()
+    me, target = db.get_setting(con, "me"), db.get_setting(con, "target")
+    if not me or not target:
+        raise HTTPException(400, "먼저 나와 상대를 설정해줘")
+    p = _persona_of(con, target)
+    ctx = {k: p.get(k) for k in ("ending", "context", "started_at", "ended_at")}
+    key = f"epitaph:{target}:{hashlib.md5(json.dumps(ctx, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:10]}"
+    if not refresh and (cached := db.get_setting(con, key)):
+        return json.loads(cached)
+    all_msgs = db.all_messages(con)
+    rel = _rel_msgs(all_msgs, me, target)
+    r = relationship.build(all_msgs, me, target, db.now_ts(con))
+    first_warm = next((sg["start"] for sg in r["stages"]["segments"] if sg["stage"] in ("some", "dating")), None)
+    uc = {"ending": p.get("ending"), "context": p.get("context"), "ended_at": p.get("ended_at"), "started_at": p.get("started_at")}
+    causes = diagnose_causes(rel, me, target, db.now_ts(con), uc).get("causes") or []
+    from datetime import datetime as _dt
+    start = p.get("started_at") or first_warm or r["range"][0][:10]
+    end = p.get("ended_at") or r["range"][1][:10]
+    try:
+        days = max(1, (_dt.fromisoformat(end) - _dt.fromisoformat(start)).days)
+    except ValueError:
+        days = None
+    out = await _funeral().epitaph(causes, days)
+    if out.get("epitaph"):
+        db.set_setting(con, key, json.dumps(out, ensure_ascii=False))
+    return out
+
+
 @app.get("/eulogy")
 async def eulogy():
     return await _funeral().eulogy()

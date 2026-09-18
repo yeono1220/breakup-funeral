@@ -113,6 +113,14 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
           <div className="memorial fade-in">
             {!dead && <div className="alive-banner" style={{ textAlign: 'left' }}>기록상으론 아직 숨이 붙어 있어. 지금 단계는 <b>{data.stages.current_label}</b>, 온도는 {data.temperature.temp ?? '–'}°. 이미 끝난 사이라면 <a style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={onEditContext}>어떻게 끝났는지 알려줘</a>. 그쪽을 우선할게.</div>}
             {uc?.overrides_stage && <div className="ctx-banner" style={{ textAlign: 'left' }}>네가 말해준 대로 봤어: <b>{uc.ending_label}</b>.{data.stages.data_label ? ` 기록만 보면 '${data.stages.data_label}'이야. 회피형처럼 원래 연락이 뜸하면 이렇게 보이기도 해.` : ''}</div>}
+            {uc?.context && (
+              <div className="told-card" style={{ textAlign: 'left' }}>
+                <div className="tiny muted" style={{ marginBottom: 4 }}>네가 말해준 사정 · 진단서는 이걸 우선해
+                  {(uc.started_at || uc.ended_at) && <span className="faint"> · {uc.started_at ?? '?'} ~ {uc.ended_at ?? '?'}</span>}</div>
+                {uc.context.split('\n').filter(Boolean).map((l, i) => <div key={i} style={{ fontSize: 13, lineHeight: 1.5 }}>· {l}</div>)}
+                {onCoach && <a className="tiny" style={{ cursor: 'pointer', textDecoration: 'underline dotted', color: 'var(--rose-deep)' }} onClick={onCoach}>더 말해주기 →</a>}
+              </div>
+            )}
             <div className="portrait-frame"><div className="portrait-ribbon" /><Portrait src={persona.portrait} size={150} /></div>
             <div className="mem-name">故 {name}</div>
             <div className="mem-target">· 대상: {persona.attachment ? ATTACH_LABEL[persona.attachment] + ' ' : ''}{name}{persona.mbti || persona.attachment ? ` (${[persona.mbti, persona.attachment && ATTACH_LABEL[persona.attachment]].filter(Boolean).join('·')})` : ''} · 함께한 {data.n_messages.toLocaleString()}마디</div>

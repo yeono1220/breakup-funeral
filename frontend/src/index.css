@@ -273,6 +273,9 @@ input,textarea{font-family:inherit;}
 .summon-body{display:flex;flex-direction:column;height:440px;}
 .coach-body{height:min(600px,72vh);}
 .coach-body .rp-msg.them{max-width:92%;}
+.rcpt{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--rose-deep);background:rgba(217,106,94,.10);border-radius:var(--r-s);padding:1px 4px;cursor:pointer;white-space:nowrap;}
+.rcpt:hover{background:rgba(217,106,94,.22);}
+.coach-status{display:inline-flex;align-items:center;gap:8px;color:var(--text-soft);font-size:12px;}
 .summon-chat{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding:8px 0;}
 .summon-in{display:flex;gap:8px;margin-top:12px;}
 .summon-in input{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-pill);padding:12px 16px;font-size:14px;color:var(--text);transition:border-color var(--dur-1) var(--ease-out);}
@@ -356,6 +359,7 @@ input,textarea{font-family:inherit;}
 textarea.ctx{width:100%;min-height:84px;background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-m);padding:12px;color:var(--text);font-size:14px;resize:vertical;transition:border-color var(--dur-1) var(--ease-out);}
 textarea.ctx:focus{outline:none;border-color:var(--rose);}
 input.date{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-s);padding:8px 12px;color:var(--text);font-size:13px;}
+.told-card{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-m);padding:12px;margin-bottom:16px;}
 .ctx-banner{background:rgba(217,106,94,.08);border:1px solid var(--rose);border-radius:var(--r-m);padding:12px;font-size:13px;color:var(--rose-deep);margin-bottom:16px;line-height:1.5;}
 
 /* ===== 부적 (색·그라데이션·그림자 허용 구역) ===== */

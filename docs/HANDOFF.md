@@ -72,10 +72,11 @@ render.yaml, frontend/vercel.json, run.bat, README.md
 | 저주 부적 | `funeral.py: curse()` / `_pick_curse()` | 후보 3개(JSON) → 코드가 26자 이하·위해 표현 없음·실제 패턴 포함인 것 중 무작위 선택. 사실 순서 셔플(답장 속도 앵커링 방지). top_words는 한글만 |
 | 레전드 썰 | `funeral.py: _legend_queries()` → `legends_for()` | 1단계: 검색어 3개 구조화 출력(effort low) → 2단계: 그 검색어로 web_search(allowed_domains 14개), match_points는 데이터 항목 인용. `planned`/`queries` 둘 다 반환 |
 | 관계 코치 | `coach.py` + `frontend/src/components/CoachChat.tsx` | SYSTEM_RULES 8개 + 렌즈 톤 + 툴 12개(+`update_context`) + 관계 요약 카드. **UI 복구됨**: 진단서 페이지 버튼·현실 치료실 카드 → 모달(SSE 스트리밍, 페이지 이동해도 대화 유지). 사용자가 사정을 말하면 코치가 `update_context`로 persona에 기록(시작/종료일·ending·note 누적) → SSE `event.context_updated` → 앱이 `/relationship`·`/persona` 재요청 → 향년·단계·사인·진단서·소환술이 새 컨텍스트로 |
+| 묘비 제목(비문) | `funeral.py: epitaph()` + `GET /epitaph` | 커뮤니티 썰 제목 결의 어그로 한 줄(12~28자). 재료: 기간·이별 방식·사용자 진술(코치 메모)·사망 원인·마지막 톡·상대 입버릇. 후보 3개 중 코드 게이트(길이·실명·위해·이모지) 통과 첫 것. persona 컨텍스트 해시로 캐시 → 코치에게 사정을 말하면 제목도 바뀜. 폴백: 마지막 톡 인용(파일/사진/링크 제외) → 부적 → 사유 → 사인 |
 | 답장 초안(F9.1) | — | **미구현** (`/draft_reply` 501). SPEC의 "말투 재현 규격" 참고 |
 
 ## 6. 알려진 이슈 / 미완 (중요도 순)
-0. **Supabase 마이그레이션 미적용**: `supabase/migrate_visits.sql`을 SQL Editor에서 실행해야 조문객 수가 실제 방문자 수로 뜸(그 전엔 카운트 숨김). 백엔드 SQLite 폴백은 이미 됨. 공동묘지 시드 묘비의 헌화 수(2914 등)는 여전히 가짜.
+0. **Supabase 마이그레이션 미적용**: `supabase/migrate_visits.sql`을 SQL Editor에서 실행해야 조문객 수가 실제 방문자 수로 뜸(그 전엔 카운트 숨김). 백엔드 SQLite 폴백은 이미 됨. 공동묘지 시드 묘비의 헌화 수(2914 등)는 여전히 가짜. 사용자의 기존 묘비 #9("파일: ….pdf" 비문, 향년 84일)는 Supabase 대시보드에서 직접 지워야 함(anon 키로 삭제 불가) — 새 비문으로 다시 안치하면 별개 묘비가 생김.
 1. **멀티유저 안전 아님** — 백엔드 상태(me/target/persona/메시지)가 서버 전역 SQLite `settings` 하나. 공개 URL에 동시 접속자가 2명이면 서로 덮어씀. 데모/지인 테스트는 "한 번에 한 명"이거나 세션 키(쿠키/헤더)로 격리 필요. 최우선.
 2. **보안 무방비** — `DELETE /data` 누구나, CORS `*`, 인증·rate limit 없음 → 공개 URL에서 LLM 키 소모 가능.
 3. Render free 슬립/데이터 초기화(위 참조).
@@ -103,5 +104,5 @@ render.yaml, frontend/vercel.json, run.bat, README.md
 ## 9. 프롬프트 고도화 백로그 (다음 세션 제안 순서)
 1. **평가셋 먼저**: 하네스는 있음 — `PYTHONIOENCODING=utf-8 python tests/prompt_eval.py --me <이 방에서의 내 카톡 이름> --target <상대> --tag <이름>` → `backend/data/evals/<tag>_<시각>.md` (gitignore). before/after1~4 파일이 이미 있음. **아직 없는 것: 사용자의 좋/나쁨 라벨.** 라벨 없이는 지금 변경이 '검증 통과율'만 올린 건지 '진짜 그 사람 같은지'는 모른다. 블라인드 테스트(실제 답 vs 생성 답 섞어서 사용자가 못 고르면 성공)가 다음 단계.
 2~5. **완료(97fd14a)** — 소환술/진단서/부적/레전드 위 표 참조. 남은 것: 소환술 단발 입력에서 "갑자기 왜" 같은 모델 고유 관용구가 여전히 나옴(대화 내 반복은 코드가 막지만 세션 간 반복은 못 막음 → 데이터에 없는 시작 표현이면 재생성하는 검증 추가 고려) · 진단서 첫 시도 통과율 ~60%(재생성 시 +10초) · 부적 후보가 top_word 하나(예: 상대 최빈어)에 쏠림.
-6. **완료** 코치 채팅 UI + update_context(분석 유동 갱신). 남은 것: 코치 답변의 `[#id]` 영수증을 클릭해 원문 보기(진단서 페이지엔 이미 openReceipt가 있음), 코치가 기록한 note를 진단서 페이지에 표시.
+6. **완료** 코치 채팅 UI + update_context(분석 유동 갱신) + `[#id]` 영수증 클릭→원문 패널 + 진단서 '네가 말해준 사정' 카드 + 툴 진행 표시("주별 타임라인 · 답장 시간 보는 중") + effort medium(한 턴 ~16초).
 7. 답장 초안(F9.1) — SPEC "말투 재현 규격" 그대로 구현.

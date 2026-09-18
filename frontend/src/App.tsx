@@ -25,6 +25,7 @@ function Shell() {
   const [persona, setPersona] = useState<Persona>({ mbti: null, attachment: null, note: null })
   const [buriedKind, setBuriedKind] = useState<'chrys' | 'curse'>('chrys')
   const [amulet, setAmulet] = useState<Amulet | null>(null)
+  const [epitaphAi, setEpitaphAi] = useState<string | null>(null)   // 어그로 묘비 제목 (LLM). 사정이 바뀌면 다시 받음
   const [coachOpen, setCoachOpen] = useState(false)
   const [coachMsgs, setCoachMsgs] = useState<CoachMsg[]>([])   // 페이지를 옮겨도 상담은 이어진다
 
@@ -47,15 +48,17 @@ function Shell() {
   }, [pair])
   const onError = useCallback((e: string) => { toast('분석 실패: ' + e.slice(0, 80)); setPage('upload') }, [toast])
 
+  useEffect(() => { if (data) api.epitaph().then(r => setEpitaphAi(r.epitaph)).catch(() => {}) }, [data])
   const alias = persona.alias ?? persona.note === 'alias'
   const name = pair ? displayName(pair.target, alias) : ''
   const startIso = data ? (data.user_context?.started_at ? data.user_context.started_at + 'T00:00:00' : data.user_context?.suggested_start ? data.user_context.suggested_start + 'T00:00:00' : data.range[0]) : ''
   const endIso = data ? (data.user_context?.ended_at ? data.user_context.ended_at + 'T00:00:00' : data.range[1]) : ''
   const days = data ? Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86400000)) : null
-  // 비문: 마지막 말이 의미 있으면 인용, 아니면 부적 사자성어 → 이별 사유 → 사망 원인 1위 순
+  // 비문: LLM 어그로 제목 → 마지막 말(파일/사진/링크 제외) 인용 → 부적 사자성어 → 이별 사유 → 사망 원인 1위 순
   const lastText = data?.last_message?.text?.trim() ?? ''
-  const meaningful = lastText.length >= 4 && !/^(사진|이모티콘|동영상)/.test(lastText)
+  const meaningful = lastText.length >= 4 && !/^(사진|이모티콘|동영상|파일:|https?:)/.test(lastText)
   const epitaph = !data ? null
+    : epitaphAi ? epitaphAi
     : meaningful ? `"${lastText.slice(0, 30)}"`
     : buriedKind === 'curse' && amulet ? `${amulet.hanja.replace(/\n/g, ' ')} — ${amulet.reading}`
     : data.user_context?.ending_label ? `${data.user_context.ending_label}으로 떠나보냄`
@@ -78,7 +81,7 @@ function Shell() {
       {page === 'tribute' && data && <Tribute data={data} name={name} portrait={persona.portrait ?? null} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} onAmulet={setAmulet} />}
       {page === 'cemetery' && <Cemetery myEpitaph={epitaph} myKind={buriedKind} myDays={days} myHanja={amulet ? amulet.hanja.replace(/\n/g, ' ') : null} />}
       {page === 'tools' && <Tools name={name || '그 사람'} onCoach={pair ? () => setCoachOpen(true) : undefined} />}
-      {coachOpen && <CoachChat name={name || '그 사람'} msgs={coachMsgs} setMsgs={setCoachMsgs} onContextUpdated={refresh} onClose={() => setCoachOpen(false)} />}
+      {coachOpen && pair && <CoachChat name={name || '그 사람'} me={pair.me} target={pair.target} msgs={coachMsgs} setMsgs={setCoachMsgs} onContextUpdated={refresh} onClose={() => setCoachOpen(false)} />}
     </>
   )
 }

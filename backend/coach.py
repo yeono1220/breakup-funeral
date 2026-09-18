@@ -273,13 +273,14 @@ class Coach:
         messages = list(history)
         for _ in range(8):
             system = self.system_prompt()   # update_context 뒤엔 persona가 바뀌므로 매 라운드 다시 만든다
-            async with client.messages.stream(model=MODEL, max_tokens=16000, output_config={"effort": "high"}, system=system, tools=TOOLS, messages=messages) as stream:
+            async with client.messages.stream(model=MODEL, max_tokens=16000, output_config={"effort": "medium"}, system=system, tools=TOOLS, messages=messages) as stream:
                 async for text in stream.text_stream:
                     yield text
                 final = await stream.get_final_message()
             if final.stop_reason != "tool_use":
                 return
             tool_uses = [b for b in final.content if b.type == "tool_use"]
+            yield {"tools": [t.name for t in tool_uses]}   # 프론트 진행 표시용 ("타임라인 보는 중…")
             messages.append({"role": "assistant", "content": final.content})
             messages.append({"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": t.id,

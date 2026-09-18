@@ -36,6 +36,7 @@ export const api = {
   setPersona: (p: Persona & { person: string }) => fetch(`${BASE}/persona`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }).then(j),
   summon: (messages: { role: string; content: string }[]) =>
     fetch(`${BASE}/summon`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }).then(j<{ reply: string; bubbles?: string[] | null; fallback?: boolean }>),
+  epitaph: () => fetch(`${BASE}/epitaph`).then(j<{ epitaph: string | null; fallback?: boolean }>),
   eulogy: () => fetch(`${BASE}/eulogy`).then(j<{ text: string; fallback?: boolean }>),
   curse: () => fetch(`${BASE}/curse`).then(j<Amulet>),
   lastMessage: () => fetch(`${BASE}/last_message`).then(j<{ message: Msg | null }>),

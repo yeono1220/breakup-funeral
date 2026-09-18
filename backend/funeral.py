@@ -547,6 +547,63 @@ JSON: {{"candidates": [{{"line": "...", "pattern": "쓴 패턴"}}, ...]}}"""
             line = random.choice(CURSES).replace("\n", " ")
             return {**base, "line": line, "text": line, "fallback": True, "error": str(e)[:200]}
 
+    # ------------------------------------------------------------ 비문 (공동묘지 묘비 제목 — 어그로성 한 줄)
+    def _epitaph_facts(self, causes: list[dict] | None, days: int | None) -> list[str]:
+        b = self.brief; r = b["symmetry"]["reply"]; w = b["waiting"]; p = self.profile()
+        facts = []
+        if days:
+            facts.append(f"관계 {days}일 ({days // 30}개월)" if days >= 60 else f"관계 {days}일")
+        if self.persona.get("ending"):
+            facts.append(ENDING_KO.get(self.persona["ending"], self.persona["ending"]))
+        if self.persona.get("context"):
+            facts.append("사용자가 말한 사정: " + self.persona["context"].replace("\n", " / ")[:300])
+        for c in (causes or [])[:2]:
+            ev = c.get("evidence") or ""
+            facts.append(f"사망 원인 {c.get('pct')}%: {c.get('label')} ({ev})" if ev else f"사망 원인 {c.get('pct')}%: {c.get('label')}")
+        facts.append(f"답장 중앙값 나 {_fmt_min(r['my_median_min'])} / 상대 {_fmt_min(r['their_median_min'])}")
+        if w:
+            facts.append(f"상대 마지막 말 “{w['text'][:30]}” 에 {w['age_hours']}시간째 답 없음")
+        last = next((m for m in reversed(self.rel) if not m.is_media and m.text.strip() and not m.text.startswith("파일:")), None)
+        if last:
+            facts.append(f"마지막 톡({'나' if last.sender == self.me else '상대'}): “{last.text.strip()[:40]}”")
+        if p["top_words"]:
+            facts.append(f"상대 입버릇: {', '.join(p['top_words'][:4])}")
+        return facts
+
+    async def epitaph(self, causes: list[dict] | None = None, days: int | None = None) -> dict:
+        facts = self._epitaph_facts(causes, days)
+        prompt = f"""공동묘지에 세울 내 관계의 묘비 제목을 3개, 제일 좋은 것부터 써. 지나가던 조문객이 "헐 뭐야" 하고 멈춰서 헌화 누르게 만드는 커뮤니티 썰 제목 같은 한 줄이다.
+
+[이 관계의 사실 (코드 계산 + 사용자 진술)]
+{chr(10).join('- ' + f for f in facts)}
+
+[결]
+- 12~28자. 구체적 숫자·상황 하나가 들어가면 강하다 (기간, 답장 속도, 마지막 말, 이별 방식).
+- 사용자가 말한 사정이 있으면 그게 1순위 재료. 없으면 사망 원인·마지막 톡.
+- 어그로지만 상대 비하·욕설·실명 없음. 자조는 OK. 이모지 없음. 따옴표로 감싸지 않는다.
+- 마지막 톡을 인용하면 따옴표 안에 짧게.
+
+[좋은 예 — 결만 참고]
+- 3년 연애 후 '우리 잠깐 시간을 갖자' → 잠수
+- 200일 선물 주고 그날 밤 환승 발각
+- 바쁘다며 스토리는 1분마다 올리던 그대
+- 읽씹 6시간, 답장은 'ㅇㅇ' 두 글자
+- 1분컷 답장 175일, 끝은 "지쳤어" 한 마디
+
+JSON: {{"candidates": ["...", "...", "..."]}}"""
+        fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"candidates": {"type": "array", "items": {"type": "string"}}},
+                                                 "required": ["candidates"], "additionalProperties": False}}
+        try:
+            resp = await client.messages.create(model=MODEL, max_tokens=2000, output_config={"effort": "low", "format": fmt},
+                                                messages=[{"role": "user", "content": prompt}])
+            cands = [str(c).strip().strip('"“”') for c in (_json(resp).get("candidates") or [])]
+            ok = [c for c in cands if 6 <= len(c) <= 34 and self.target not in c and not _RE_HARM.search(c) and not stats._RE_EMOJI.search(c)]
+            if not ok:
+                return {"epitaph": None, "candidates": cands, "fallback": True}
+            return {"epitaph": ok[0], "candidates": cands}
+        except Exception as e:  # noqa: BLE001
+            return {"epitaph": None, "fallback": True, "error": str(e)[:200]}
+
 
 # ------------------------------------------------------------ 레전드 썰 매칭 (웹 검색)
 LEGEND_DOMAINS = ["pann.nate.com", "gall.dcinside.com", "m.dcinside.com", "theqoo.net", "instiz.net", "fmkorea.com",
