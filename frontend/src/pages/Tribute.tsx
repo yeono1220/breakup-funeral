@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Relationship } from '../api'
 import { LyingChar } from '../components/Char'
+import { GrassField } from '../components/GrassField'
 import { Modal, useToast, fmtMin } from '../components/ui'
 
 const CURSES = ['읽씹하던 그 손가락,\n앞으로 오타만 나거라', '너의 모든 소개팅에\n어색한 침묵이 깃들기를', '새 연애 3일 만에\n전 애인 얘기 튀어나와라', '너의 인스타 스토리\n조회수 평생 한 자리수', "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
@@ -54,8 +55,7 @@ export function Tribute({ data, name, onBack, onNext, onBuried }: { data: Relati
         <p style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>{desc}</p>
 
         <div className="grave-scene">
-          <div className="sky-grad" />
-          <div className="grass" />
+          <GrassField />
           <div className="pit">
             <div className="pit-wall" />
             <div className="pit-char"><LyingChar width={170} /></div>

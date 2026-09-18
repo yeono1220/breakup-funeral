@@ -256,18 +256,19 @@ input,textarea{font-family:inherit;}
 .toast.show{opacity:1;bottom:34px;}
 
 /* grave scene */
-.grave-scene{position:relative;height:360px;border-radius:20px;overflow:hidden;border:1.5px solid var(--line);background:#BFE3F0;user-select:none;}
+.grave-scene{position:relative;height:360px;border-radius:20px;overflow:hidden;border:1.5px solid var(--line);background:#ffffff;user-select:none;}
+.grass-field{position:absolute;inset:0;width:100%;height:100%;display:block;}
 .sky-grad{position:absolute;inset:0;background:linear-gradient(180deg,#CDEAF4 0%,#DCF0F6 45%,transparent 60%);}
 .grass{position:absolute;left:0;right:0;bottom:0;height:170px;background:linear-gradient(180deg,#7BA355,#6B8F4E);border-top:4px solid #8FB86A;}
 .grass::before{content:'';position:absolute;top:-4px;left:0;right:0;height:8px;background:repeating-linear-gradient(90deg,#8FB86A 0 6px,#7BA355 6px 12px);opacity:.6;}
-.pit{position:absolute;left:50%;transform:translateX(-50%);bottom:26px;width:280px;height:150px;background:linear-gradient(180deg,#3A2A1C,#241812);border-radius:8px 8px 12px 12px;box-shadow:inset 0 8px 18px rgba(0,0,0,.5);border:3px solid #5A4230;overflow:hidden;}
+.pit{position:absolute;left:50%;transform:translateX(-50%);bottom:26px;z-index:3;width:280px;height:150px;background:linear-gradient(180deg,#3A2A1C,#241812);border-radius:8px 8px 12px 12px;box-shadow:inset 0 8px 18px rgba(0,0,0,.5);border:3px solid #5A4230;overflow:hidden;}
 .pit-wall{position:absolute;inset:0;background:repeating-linear-gradient(180deg,rgba(0,0,0,.08) 0 10px,transparent 10px 20px);}
 .pit-char{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:2;}
 .coffin-lid{position:absolute;left:50%;transform:translateX(-50%);cursor:grab;z-index:5;touch-action:none;transition:top .1s;}
 .coffin-lid:active{cursor:grabbing;}
 .coffin-lid.dragging{transition:none;}
 .coffin-lid.closed{transition:top .5s cubic-bezier(.4,0,.6,1);}
-.lid-hint{text-align:center;font-size:12px;color:#5A4230;background:rgba(255,255,255,.85);border-radius:10px;padding:3px 10px;margin-top:6px;white-space:nowrap;}
+.lid-hint{text-align:center;font-size:12px;color:#5A4230;background:rgba(255,255,255,.92);border:1px solid #d9e6cf;border-radius:10px;padding:3px 10px;margin-top:6px;white-space:nowrap;}
 .soil-cover{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#5A4230,#3A2A1C);transition:height .6s ease;z-index:6;}
 .mound-final{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);z-index:8;text-align:center;animation:pop .6s;}
 .thrown-flowers{position:absolute;left:0;right:0;top:44px;display:flex;justify-content:center;gap:6px;font-size:22px;flex-wrap:wrap;pointer-events:none;}
