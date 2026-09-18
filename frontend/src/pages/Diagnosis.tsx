@@ -179,11 +179,11 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
           </div>
 
           <div className="card">
-            <h3>🧪 부검 소견 · 썸 신호</h3>
-            <p className="sub">{data.signals.title} — {data.signals.desc}</p>
-            {data.signals.n_baseline_people === 0 && <div className="ctx-banner">⚠️ 비교할 친구 방이 없어요. "평소의 나" 기준이 없으면 편향·신호 점수가 부풀려져요 — 친구 방 2~3개를 같이 올리면 정확해집니다.</div>}
+            <h3>🧪 부검 소견 · {dead ? '이별 신호' : '썸 신호'}</h3>
+            <p className="sub"><b style={{ color: 'var(--text)' }}>{data.signals.title}</b> — {data.signals.desc}</p>
+            {(data.signals.n_baseline_people === 0 || data.signals.me_unmeasurable) && <div className="ctx-banner">⚠️ 비교할 1:1 친구 방이 없어 <b>내 쪽 신호</b>는 계산할 수 없어요. "평소의 나" 기준이 있어야 이 사람한테만 다르게 굴었는지 알 수 있어요 — 친구 방 2~3개(1:1)를 같이 올려주세요.</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <SignalCol who="나" score={data.signals.me.score} parts={data.signals.me.parts} color="#D96A5E" />
+              <SignalCol who="나" score={data.signals.me.score} parts={data.signals.me.parts} color="#D96A5E" empty={data.signals.me_unmeasurable ? '계산 불가 (비교 기준 없음)' : undefined} />
               <SignalCol who={name} score={data.signals.them.score} parts={data.signals.them.parts} color="#AEB9C4" />
             </div>
             <ul style={{ marginTop: 12, paddingLeft: 18, fontSize: 13 }} className="muted">{data.signals.facts.map((f, i) => <li key={i}>{f.replace(t, name)}</li>)}</ul>
@@ -197,10 +197,11 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
   )
 }
 
-function SignalCol({ who, score, parts, color }: { who: string; score: number | null; parts: { label: string; score: number }[]; color: string }) {
+function SignalCol({ who, score, parts, color, empty }: { who: string; score: number | null; parts: { label: string; score: number }[]; color: string; empty?: string }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}><span className="tiny muted">{who} 쪽 신호</span><span className="pen" style={{ fontSize: 28, color }}>{score ?? '–'}</span></div>
+      {empty && <div className="tiny faint">{empty}</div>}
       {parts.map(p => (
         <div key={p.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginTop: 4 }}>
           <span className="muted" style={{ width: 70 }}>{p.label}</span>

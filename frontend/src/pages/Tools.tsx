@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, type Legends } from '../api'
 import { Modal } from '../components/ui'
 
 const CANNED = ['ㅇㅇ 근데 그건 네 생각이고', '바쁘다니까 자꾸', '미안한데 나 진짜 변한 거 없어', '그때도 말했잖아 ㅎㅎ', '굳이 지금 이걸 물어봐야 돼?', '너 또 이런다 진짜', '나중에 연락할게 (안 함)']
@@ -71,13 +71,36 @@ function Summon({ name, onClose }: { name: string; onClose: () => void }) {
   )
 }
 
+const STATIC: Legends = { stories: [
+  { title: '6시간마다 답장, 알고 보니 딴 사람이랑은 실시간', source: '디시 연애갤 (예시)', url: '', summary: '바쁜 줄 알았던 상대가 다른 사람과는 실시간으로 대화하고 있었고, 나한테만 "바빴어 미안"이 반복됐다는 글.', match_points: ['답장 간격이 점점 벌어짐'], similarity: 0, hit: '바쁜 게 아니라 우선순위에서 밀린 것이었습니다.' },
+  { title: '"나중에 연락할게"가 마지막', source: '네이트판 (예시)', url: '', summary: '"나중에 연락할게" 이후 6개월째 연락이 없지만 생일엔 짧은 축하 메시지만 왔다는 글.', match_points: ['마지막 메시지 후 장기 침묵'], similarity: 0, hit: "'나중에'는 거절의 완곡어법입니다." },
+], fallback: true }
+
 function Legend({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<Legends | null>(null)
+  const [busy, setBusy] = useState(true)
+  const load = (refresh = false) => { setBusy(true); api.legends(refresh).then(setData).catch(() => setData(STATIC)).finally(() => setBusy(false)) }
+  useEffect(() => { load(false) }, [])
+  const shown = data && data.stories.length ? data : (data ? STATIC : null)
   return (
     <Modal title="📖 레전드 썰 매칭" onClose={onClose}>
-      <p className="tiny muted" style={{ marginBottom: 14 }}>당신 카톡 맥락과 유사한 레전드 썰을 찾았어요</p>
-      <div className="legend-story"><span className="ls-match">🎯 유사도 98%</span><div className="ls-src">📍 디시인사이드 연애갤 · 추천 4,201</div><div className="ls-body">"6시간마다 답장 오길래 바쁜 줄 알았는데, 알고 보니 게임하면서 딴 사람이랑은 실시간 톡. 나한테만 '바빴어 미안' 시전…"</div><div className="ls-hit">💥 현타 포인트: 바쁜 게 아니라 <b>우선순위에서 밀린 것</b>이었습니다.</div></div>
-      <div className="legend-story"><span className="ls-match">🎯 유사도 94%</span><div className="ls-src">📍 네이트판 · 댓글 1,882</div><div className="ls-body">"'나 나중에 연락할게'가 마지막이었음. 그 나중은 6개월째 안 옴. 근데 생일엔 칼같이 '생축' 한 마디…"</div><div className="ls-hit">💥 현타 포인트: '나중에'는 <b>거절의 완곡어법</b>입니다.</div></div>
-      <button className="btn btn-block" onClick={onClose}>현실 자각 완료 🫠</button>
+      <p className="tiny muted" style={{ marginBottom: 14 }}>
+        {busy ? '네이트판·디시·더쿠를 뒤지는 중… (10~30초)' : shown?.fallback ? `실시간 검색이 안 돼서 예시 썰을 보여드려요${data?.reason ? ` (${data.reason.slice(0, 60)})` : ''}` : `내 카톡 데이터 기준으로 비슷한 실제 썰을 찾았어요${data?.cached ? ' · 캐시' : ''}`}
+      </p>
+      {busy && <div className="legend-story"><div className="ls-body muted">🔍 "회피형 잠수 이별 썰", "읽씹 후 잠수" 같은 키워드로 검색 중…</div></div>}
+      {!busy && shown?.stories.map((s, i) => (
+        <div className="legend-story" key={i}>
+          {s.similarity > 0 && <span className="ls-match">🎯 유사도 {s.similarity}%</span>}
+          <div className="ls-src">📍 {s.source}{s.url && <> · <a href={s.url} target="_blank" rel="noreferrer" style={{ color: 'var(--rose-soft)' }}>원문 보기 ↗</a></>}</div>
+          <div className="ls-body"><b style={{ color: 'var(--text)' }}>{s.title}</b><br />{s.summary}</div>
+          {s.match_points?.length > 0 && <div className="tiny muted" style={{ marginTop: 8 }}>겹치는 점: {s.match_points.join(' · ')}</div>}
+          {s.hit && <div className="ls-hit">💥 현타 포인트: {s.hit}</div>}
+        </div>
+      ))}
+      <div className="next-row">
+        <button className="btn" style={{ flex: 1 }} disabled={busy} onClick={() => load(true)}>다시 검색</button>
+        <button className="btn btn-rose" style={{ flex: 1 }} onClick={onClose}>현실 자각 완료 🫠</button>
+      </div>
     </Modal>
   )
 }

@@ -29,6 +29,7 @@ export const api = {
   eulogy: () => fetch(`${BASE}/eulogy`).then(j<{ text: string; fallback?: boolean }>),
   curse: () => fetch(`${BASE}/curse`).then(j<Amulet>),
   lastMessage: () => fetch(`${BASE}/last_message`).then(j<{ message: Msg | null }>),
+  legends: (refresh = false) => fetch(`${BASE}/legends${refresh ? '?refresh=1' : ''}`).then(j<Legends>),
 }
 
 export type Ending = 'ghosted' | 'dumped' | 'dumper' | 'faded' | 'mutual' | 'ongoing'
@@ -61,7 +62,7 @@ export type Relationship = {
   symmetry: { bars: { key: string; label: string; me: number; them: number; share: number | null }[]; reply: { my_median_min: number | null; their_median_min: number | null } }
   bias: { reply_speed: { to_target_min: number | null; to_others_min: number | null; times_faster: number | null }; length: { to_target: number; to_others: number; times: number | null }; kkk: { to_target: number; to_others: number; times: number | null }; questions: { times: number | null }; late_night: { with_target: number; with_others: number }; baseline_people: number }
   waiting: { msg_id: number; text: string; ts: string; age_hours: number; reason: string; usual_reply_min: number | null; times_slower: number | null } | null
-  signals: { verdict: 'mutual' | 'me_only' | 'them_only' | 'friends'; title: string; desc: string
+  signals: { verdict: 'mutual' | 'me_only' | 'them_only' | 'friends' | 'unknown'; title: string; desc: string; retro?: boolean; me_unmeasurable?: boolean
     me: { score: number | null; parts: { label: string; score: number; weight: number }[] }
     them: { score: number | null; parts: { label: string; score: number; weight: number }[] }
     facts: string[]; n_baseline_people: number; low_confidence: boolean }
@@ -71,3 +72,6 @@ export type Relationship = {
   user_context?: { ending: Ending | null; ending_label: string | null; context: string | null; ended_at: string | null; started_at: string | null; suggested_start: string | null; overrides_stage: boolean }
 }
 export type Compare = { a: string; b: string; rows: Record<string, null | { n_messages: number; temp: number | null; my_reply_min: number | null; their_reply_min: number | null; my_start_share: number | null; my_chars_share: number | null; my_avg_len: number; my_kkk: number; late_night: number }> }
+
+export type Legend = { title: string; source: string; url: string; summary: string; match_points: string[]; similarity: number; hit: string }
+export type Legends = { stories: Legend[]; searched?: boolean; cached?: boolean; fallback?: boolean; reason?: string }

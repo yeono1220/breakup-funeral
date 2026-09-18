@@ -14,7 +14,23 @@ VERDICTS = {
     "me_only": ("내 쪽만 뜨거움", "너는 이 사람한테만 다르게 구는데, 상대 쪽 신호는 평소 친구 수준이야."),
     "them_only": ("상대가 더 적극적", "상대 쪽 신호가 세고 너는 평소대로야. 눈치 못 채고 있는 거 아냐?"),
     "friends": ("아직 친구 모양", "양쪽 다 평소 친구들이랑 비슷해. 아직은 친구 모양."),
+    "unknown": ("판정 보류", "비교할 1:1 친구 방이 없어서 내 쪽 신호를 못 쟀어. 친구 방 2~3개를 올리면 판정돼."),
 }
+# 이별 렌즈: 같은 판정을 회고형으로
+VERDICTS_RETRO = {
+    "mutual": ("서로 신호는 있었어", "양쪽 다 평소와 다르게 굴었어. 마음이 없어서 끝난 관계는 아니었다는 뜻이야."),
+    "me_only": ("내 쪽이 더 뜨거웠어", "너는 이 사람한테만 다르게 굴었고, 상대 쪽 신호는 친구 수준이었어. 온도 차가 있던 관계."),
+    "them_only": ("상대가 더 적극적이었어", "상대 쪽 신호가 세고 너는 평소대로였어. 상대는 네가 좀 더 적극적이길 바랐을 수도 있어."),
+    "friends": ("친구 모양이었어", "양쪽 다 평소 친구들이랑 비슷했어. 애초에 관계의 모양이 연인은 아니었을 수도."),
+    "unknown": ("판정 보류", "비교할 1:1 친구 방이 없어서 내 쪽 신호를 못 쟀어. 친구 방 2~3개를 올리면 판정돼."),
+}
+
+
+def retro(result: dict, lens: str) -> dict:
+    """렌즈에 맞는 문구로 교체 (breakup이면 회고형)."""
+    table = VERDICTS_RETRO if lens == "breakup" else VERDICTS
+    title, desc = table.get(result["verdict"], table["friends"])
+    return {**result, "title": title, "desc": desc, "retro": lens == "breakup"}
 
 
 def _log_mult_score(mult: float | None, cap: float = 4.0) -> float | None:
@@ -94,8 +110,11 @@ def signals(all_msgs: list[Message], rel_msgs: list[Message], me: str, target: s
     ]
     them_score, them_used = _avg(them_parts)
 
+    # 내 쪽은 baseline(다른 방) 없이는 잴 수 없다 — 항목 2개 미만이면 판정 보류
+    if len(me_used) < 2:
+        me_score, me_used = None, []
     if me_score is None or them_score is None:
-        key = "friends"
+        key = "unknown" if me_score is None else "friends"
     elif me_score >= 55 and them_score >= 55:
         key = "mutual"
     elif me_score >= 55:
@@ -126,4 +145,5 @@ def signals(all_msgs: list[Message], rel_msgs: list[Message], me: str, target: s
         "facts": facts[:4],
         "n_baseline_people": len({m.sender for m in others if m.sender != me}),
         "low_confidence": len(rel_msgs) < 200 or len(others) < 100,
+        "me_unmeasurable": me_score is None,
     }

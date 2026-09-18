@@ -14,10 +14,11 @@ from pydantic import BaseModel
 import db
 import relationship
 from core.causes import diagnose as diagnose_causes
+from core.signals import retro as retro_signals
 from core.sessions import relationship_messages as _rel_msgs
 import stats
 from coach import Coach
-from funeral import Funeral
+from funeral import Funeral, legends_for
 from parser import parse_file_meta
 
 app = FastAPI(title="kakao-coach")
@@ -110,7 +111,7 @@ async def targets():
 
 
 ENDED = {"ghosted", "dumped", "dumper", "faded", "mutual"}   # 사용자가 "끝났다"고 알려준 상태
-ENDING_LABEL = {"ghosted": "잠수·읽씹", "dumped": "차임", "dumper": "내가 끝냄", "faded": "자연소멸", "mutual": "합의 이별",
+ENDING_LABEL = {"ghosted": "잠수·읽씹", "dumped": "차였음", "dumper": "내가 끝냄", "faded": "자연소멸", "mutual": "합의 이별",
                 "ongoing": "아직 안 끝남", None: None}
 
 
@@ -192,6 +193,7 @@ async def relationship_view(person: str):
         r["stages"]["lens"] = "breakup"
         r["stages"]["current_stage"] = "ended"
         r["stages"]["current_label"] = f"이별 ({ENDING_LABEL[ending]})"
+    r["signals"] = retro_signals(r["signals"], r["stages"]["lens"])
     return r
 
 
@@ -317,6 +319,24 @@ async def eulogy():
 @app.get("/curse")
 async def curse():
     return await _funeral().curse()
+
+
+@app.get("/legends")
+async def legends(refresh: bool = False):
+    """레전드 썰 매칭: 웹 검색 결과를 상대별로 캐시."""
+    con = _con()
+    target = db.get_setting(con, "target") or ""
+    key = f"legends:{target}"
+    if not refresh:
+        cached = db.get_setting(con, key)
+        if cached:
+            return {**json.loads(cached), "cached": True}
+    fun = _funeral()
+    fun.brief["causes"] = None
+    out = await legends_for(fun)
+    if out.get("stories"):
+        db.set_setting(con, key, json.dumps(out, ensure_ascii=False))
+    return out
 
 
 @app.get("/last_message")

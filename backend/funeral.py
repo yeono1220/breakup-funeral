@@ -3,8 +3,10 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import random
+import re
 from datetime import datetime
 
 import anthropic
@@ -21,7 +23,7 @@ _WS = os.getenv("ANTHROPIC_WORKSPACE_ID")
 client = anthropic.AsyncAnthropic(default_headers={"anthropic-workspace-id": _WS} if _WS else None)
 
 ATTACH_KO = {"secure": "안정형", "anxious": "불안형", "avoidant": "회피형", "fearful": "혼란형"}
-ENDING_KO = {"ghosted": "상대가 잠수/읽씹으로 끝냄", "dumped": "내가 차임", "dumper": "내가 끝냄", "faded": "자연소멸", "mutual": "합의 이별", "ongoing": "아직 안 끝남"}
+ENDING_KO = {"ghosted": "상대가 잠수/읽씹으로 끝냄 (나는 답을 기다리다 끝남)", "dumped": "상대가 나를 찼음 (내가 차였음 — 이별을 통보한 쪽은 상대)", "dumper": "내가 상대를 찼음 (내가 이별을 통보함)", "faded": "자연소멸", "mutual": "합의 이별", "ongoing": "아직 안 끝남"}
 
 # 🔮 애착유형별 X 저주 부적 — (한자, 음, 뜻). 앞쪽이 밈 버전, 뒤가 정통 버전.
 AMULETS = {
@@ -198,3 +200,93 @@ class Funeral:
         except Exception:  # noqa: BLE001
             line = random.choice(CURSES).replace("\n", " ")
             return {**base, "line": line, "text": line, "fallback": True}
+
+
+# ------------------------------------------------------------ 레전드 썰 매칭 (웹 검색)
+LEGEND_DOMAINS = ["pann.nate.com", "gall.dcinside.com", "m.dcinside.com", "theqoo.net", "instiz.net", "fmkorea.com",
+                  "teamblind.com", "everytime.kr", "ppomppu.co.kr", "clien.net", "82cook.com", "bobaedream.co.kr", "orbi.kr", "dogdrip.net"]
+LEGEND_SCHEMA_HINT = """{"stories": [{"title": "...", "source": "네이트판 톡 / 디시 연애갤 / 더쿠 ...", "url": "https://...",
+  "summary": "글의 상황을 내 말로 2문장 요약 (원문 복사 금지)", "match_points": ["내 데이터와 겹치는 점 1", "겹치는 점 2"],
+  "similarity": 0~100 정수, "hit": "현타 포인트 한 문장"}]}"""
+
+
+class _LegendMixin:
+    pass
+
+
+def _extract_json(text: str) -> dict | None:
+    cands = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S) or []
+    start = text.rfind('{"stories"')
+    if start >= 0:
+        cands.append(text[start:])
+    m = re.search(r"\{.*\}", text, re.S)
+    if m:
+        cands.append(m.group(0))
+    for c in cands:
+        try:
+            return json.loads(c)
+        except json.JSONDecodeError:
+            # 뒤가 잘린 경우 마지막 완결 객체까지만
+            end = c.rfind("}]}")
+            if end > 0:
+                try:
+                    return json.loads(c[:end + 3])
+                except json.JSONDecodeError:
+                    pass
+    return None
+
+
+async def legends_for(fun: "Funeral") -> dict:
+    """내 관계 데이터 + 사용자 진술을 검색 쿼리로 바꿔 커뮤니티 썰을 실시간 검색·매칭."""
+    b = fun.brief; r = b["symmetry"]["reply"]; w = b["waiting"]; c = b.get("causes") or {}
+    facts = [
+        f"관계 단계 흐름: {' → '.join(s['label'] for s in b['stages']['segments'])}",
+        f"상대 답장 중앙값 {_fmt_min(r['their_median_min'])}, 내 답장 중앙값 {_fmt_min(r['my_median_min'])}",
+        f"나는 이 사람에게 다른 사람보다 {b['bias']['reply_speed']['times_faster']}배 빨리 답함",
+    ]
+    if w:
+        facts.append(f"상대 마지막 메시지 “{w['text'][:40]}” 에 {w['age_hours']}시간째 무응답")
+    persona = ", ".join(x for x in [fun.persona.get("mbti"), ATTACH_KO.get(fun.persona.get("attachment") or "")] if x)
+    prompt = f"""아래는 사용자의 카톡 데이터로 계산한 관계 사실과, 사용자가 직접 알려준 이별 상황이야.
+이와 **비슷한 상황의 실제 커뮤니티 썰**을 웹에서 찾아서 2~3개 골라줘. 네이트판 톡, 디시 연애갤, 더쿠, 인스티즈, 에펨코리아, 블라인드 같은 곳.
+
+[데이터 사실]
+{chr(10).join('- ' + x for x in facts)}
+- 상대 성향(사용자 입력): {persona or '미입력'}
+- {fun.context_line()}
+
+[규칙]
+1. web_search로 2~4번 검색해. 검색어는 한국어로, 상황 키워드 조합 (예: "회피형 잠수 이별 썰", "읽씹 후 잠수 네이트판", "연락 뜸해지다가 잠수").
+2. 실제로 존재하는 글만. URL은 검색 결과에 있던 것 그대로. 지어내지 마.
+3. 요약은 원문을 복사하지 말고 상황만 내 말로 2문장. 실명·연락처 등 개인정보 제외.
+4. 각 썰마다 사용자 데이터와 겹치는 점을 구체적으로 (예: "상대 답장은 빨랐는데 어느 날 갑자기 끊김").
+5. 마지막에 아래 JSON만 출력 (설명 금지):
+{LEGEND_SCHEMA_HINT}"""
+    try:
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 6, "allowed_domains": LEGEND_DOMAINS,
+                  "user_location": {"type": "approximate", "country": "KR", "timezone": "Asia/Seoul"}}]
+        messages = [{"role": "user", "content": prompt}]
+        text = ""
+        for _ in range(4):   # pause_turn(검색이 길어질 때 서버가 중간 정지) 이어받기
+            resp = await client.messages.create(model=MODEL, max_tokens=12000, output_config={"effort": "medium"},
+                                                tools=tools, messages=messages)
+            text = "".join(blk.text for blk in resp.content if blk.type == "text")
+            if resp.stop_reason != "pause_turn":
+                break
+            messages.append({"role": "assistant", "content": resp.content})
+        data = _extract_json(text) or {}
+        if not data.get("stories"):
+            return {"stories": [], "fallback": True, "reason": f"parse 실패 (stop={resp.stop_reason}, text={text[-160:]!r})"}
+        stories = []
+        for s in data.get("stories", [])[:3]:
+            url = str(s.get("url", ""))
+            if not url.startswith("http"):
+                continue
+            stories.append({"title": str(s.get("title", ""))[:80], "source": str(s.get("source", ""))[:40], "url": url,
+                            "summary": str(s.get("summary", ""))[:300], "match_points": [str(x)[:80] for x in (s.get("match_points") or [])][:3],
+                            "similarity": int(s.get("similarity", 0) or 0), "hit": str(s.get("hit", ""))[:120]})
+        if not stories:
+            return {"stories": [], "fallback": True, "reason": "검색 결과 없음"}
+        return {"stories": stories, "searched": True}
+    except Exception as e:  # noqa: BLE001
+        return {"stories": [], "fallback": True, "reason": str(e)[:200]}
