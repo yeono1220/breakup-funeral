@@ -93,7 +93,10 @@ class TargetBody(BaseModel):
 
 @app.post("/target")
 async def set_target(body: TargetBody):
-    db.set_setting(_con(), "target", body.target)
+    con = _con()
+    if body.target == db.get_setting(con, "me"):
+        raise HTTPException(400, "상대가 나 자신이에요. '누가 당신인가요'와 '누구를 보낼까요'를 다시 골라주세요.")
+    db.set_setting(con, "target", body.target)
     return {"ok": True}
 
 
@@ -170,6 +173,8 @@ async def relationship_view(person: str):
     me = db.get_setting(con, "me")
     if not me:
         raise HTTPException(400, "me not set")
+    if person == me:
+        raise HTTPException(400, "상대가 나 자신이에요. 다른 사람을 골라주세요.")
     r = relationship.build(db.all_messages(con), me, person, db.now_ts(con))
     p = _persona_of(con, person)
     ending = p.get("ending")

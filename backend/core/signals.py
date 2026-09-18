@@ -59,7 +59,7 @@ def signals(all_msgs: list[Message], rel_msgs: list[Message], me: str, target: s
         }
 
     def mult(a, b):
-        return None if b == 0 or a is None else a / b
+        return None if a is None or b is None or b == 0 else a / b
 
     s_me_rel, s_me_oth = style(mine_rel), style(mine_oth)
     s_th_rel, s_th_oth = style(them_rel), style(them_oth)
