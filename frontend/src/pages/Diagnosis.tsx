@@ -35,8 +35,13 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
   const days = Math.max(1, Math.round((new Date(lastDate).getTime() - new Date(startIso).getTime()) / 86400000))
   const knownBefore = Math.round((new Date(startIso).getTime() - new Date(data.range[0]).getTime()) / 86400000)
   const saveStart = async (v: string) => { setStartedAt(v || null); setEditStart(false); await api.setPersona({ person: t, mbti: persona.mbti, attachment: persona.attachment, ending: persona.ending ?? null, context: persona.context ?? null, ended_at: persona.ended_at ?? null, started_at: v || null, alias }) }
-  const weeks = data.weekly
+  // 차트 창: 관계 시작일(월요일 기준)부터. 그 전 알고 지낸 기간은 x축에서 제외 (짧은 관계가 오른쪽에 압축되는 문제)
+  const startWeek = (() => { const d = new Date(startIso); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10) })()
+  const weeksAll = data.weekly
+  const weeksFrom = weeksAll.filter(w => w.week_start >= startWeek)
+  const weeks = weeksFrom.length >= 4 ? weeksFrom : weeksAll
   const valid = weeks.filter(w => w.temp != null) as (typeof weeks[number] & { temp: number })[]
+  const gaps = weeks.map((w, i) => (w.temp == null ? i : -1)).filter(i => i >= 0)
   const peak = valid.reduce((a, b) => (b.temp > a.temp ? b : a), valid[0])
   const lastValid = valid[valid.length - 1]
 
@@ -66,7 +71,8 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
   const path = useMemo(() => {
     if (!valid.length) return ''
     const n = weeks.length
-    const pts = weeks.map((w, i) => (w.temp == null ? null : [ (i / Math.max(1, n - 1)) * 400, 200 - (w.temp / 100) * 180 ] as [number, number]))
+    // 빈 주는 건너뛰고 유효한 점만 이어서 선이 끊기지 않게 (빈 주는 옅은 띠로 따로 표시)
+    const pts = weeks.map((w, i) => (w.temp == null ? null : [ (i / Math.max(1, n - 1)) * 400, 200 - (w.temp / 100) * 180 ] as [number, number])).filter((q): q is [number, number] => !!q)
     return smoothPath(pts, 0.5, [8, 200])
   }, [weeks, valid.length])
   const xOf = (ws: string) => (weeks.findIndex(w => w.week_start === ws) / Math.max(1, weeks.length - 1)) * 100
@@ -154,6 +160,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
             <p className="sub">{peak ? <>최고점 <span className="rose-tag num">{peakShown}°</span> ({fmtShort(peak.week_start)} 주) → 지금 <span className="rose-tag num">{lastValid ? lastShown : '–'}°</span></> : '대화가 너무 적어'}</p>
             <div className="freefall">
               <svg className="ff-svg" viewBox="0 0 400 210" preserveAspectRatio="none">
+                {gaps.map(i => { const n = Math.max(1, weeks.length - 1); const w = 400 / n; return <rect key={'g' + i} x={(i / n) * 400 - w / 2} y="8" width={w} height="192" fill="var(--text-faint)" opacity=".07" /> })}
                 {/* 격자: 중앙 50° 한 줄만 */}
                 <line x1="0" y1="110" x2="400" y2="110" stroke="var(--line)" strokeWidth="1" strokeDasharray="4 5" />
                 {/* 펜 자국: 굵고 옅은 밑선 + 얇고 진한 윗선 */}
@@ -181,7 +188,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
                 <button className="btn btn-sm" onClick={() => saveStart('')}>첫 카톡부터</button>
               </div>
             )}
-            <div className="ff-stages" style={{ justifyContent: 'flex-start' }}>{data.stages.segments.map((s, i) => <span key={i} className="ff-stage">{s.label} {fmtShort(s.start)}~{fmtShort(s.end)}</span>)}</div>
+            <div className="ff-stages" style={{ justifyContent: 'flex-start' }}>{data.stages.segments.filter(sg => sg.end >= startWeek).map((s, i) => <span key={i} className="ff-stage">{s.label} {fmtShort(s.start)}~{fmtShort(s.end)}</span>)}</div>
           </div>
 
           <div className="card reveal" style={order(1)}>
