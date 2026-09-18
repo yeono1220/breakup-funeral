@@ -94,7 +94,7 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
               onDrop={e => { e.preventDefault(); setDrag(false); ingest(() => api.upload(Array.from(e.dataTransfer.files))) }}>
               <svg width="38" height="38" viewBox="0 0 38 38" fill="none"><path d="M19 5 L19 24 M11 16 L19 24 L27 16" stroke="#6B7484" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M8 30 L30 30" stroke="#6B7484" strokeWidth="2" strokeLinecap="round" /></svg>
               <p>{busy ? '읽는 중…' : '카톡 대화 파일(.txt) 드래그 & 드롭'}</p>
-              <span>또는 눌러서 업로드 · 상대 방 1개 + 친구 방 2~3개 (비교 기준용)</span>
+              <span>또는 눌러서 업로드 · 그 사람과의 1:1 대화방이면 충분해요</span>
               <input type="file" multiple accept=".txt" onChange={e => e.target.files && ingest(() => api.upload(Array.from(e.target.files!)))} />
             </label>
             <div className="up-alt">
