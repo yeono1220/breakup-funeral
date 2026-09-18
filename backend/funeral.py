@@ -17,7 +17,8 @@ from parser import Message
 
 load_dotenv()
 MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
-client = anthropic.AsyncAnthropic()
+_WS = os.getenv("ANTHROPIC_WORKSPACE_ID")
+client = anthropic.AsyncAnthropic(default_headers={"anthropic-workspace-id": _WS} if _WS else None)
 
 ATTACH_KO = {"secure": "안정형", "anxious": "불안형", "avoidant": "회피형", "fearful": "혼란형"}
 CANNED_REPLIES = ["ㅇㅇ 근데 그건 네 생각이고", "바쁘다니까 자꾸", "미안한데 나 진짜 변한 거 없어", "그때도 말했잖아 ㅎㅎ",

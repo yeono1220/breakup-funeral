@@ -25,7 +25,8 @@ from parser import Message
 
 load_dotenv()
 MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
-client = anthropic.AsyncAnthropic()
+_WS = os.getenv("ANTHROPIC_WORKSPACE_ID")
+client = anthropic.AsyncAnthropic(default_headers={"anthropic-workspace-id": _WS} if _WS else None)
 
 LENS_TONE = {
     "some": "지금 단계는 '썸'. 톤: 놀리는 친한 친구. 가볍고 짧게, 웃기되 숫자는 정확하게.",
