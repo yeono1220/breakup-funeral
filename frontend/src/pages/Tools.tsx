@@ -63,7 +63,14 @@ function Summon({ name, onClose }: { name: string; onClose: () => void }) {
     setMsgs(hist); setV(''); setBusy(true)
     try {
       const r = await api.summon(hist.map(m => ({ role: m.role, content: m.content })))
-      setMsgs([...hist, { role: 'assistant', content: r.reply, note: r.fallback ? NOTE_DEMO : NOTE_REAL }])
+      const bubbles = r.bubbles && r.bubbles.length ? r.bubbles : [r.reply]
+      const note = r.fallback ? NOTE_DEMO : NOTE_REAL
+      // 상대가 실제로 그러듯 버블을 하나씩 띄운다 (마지막 버블에만 주석)
+      for (let i = 0; i < bubbles.length; i++) {
+        if (i) await new Promise(res => setTimeout(res, 500 + Math.min(1200, bubbles[i].length * 60)))
+        const last = i === bubbles.length - 1
+        setMsgs([...hist, ...bubbles.slice(0, i + 1).map((b, j) => ({ role: 'assistant' as const, content: b, note: last && j === i ? note : undefined }))])
+      }
     } catch {
       setMsgs([...hist, { role: 'assistant', content: CANNED[Math.floor(Math.random() * CANNED.length)], note: NOTE_DEMO }])
     } finally { setBusy(false) }

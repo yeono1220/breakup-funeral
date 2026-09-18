@@ -1,12 +1,19 @@
-"""장례식 전용 LLM 기능: X 소환술(상대 말투 복제), 진정성 진단서, 저주 부적.
+"""장례식 전용 LLM 기능: X 소환술(상대 말투 복제), 진정성 진단서, 저주 부적, 레전드 썰.
 전부 '실패하면 템플릿 폴백' — 키가 없어도 데모는 돌아간다.
+
+프롬프트 원칙
+- 출력 형식은 구조화 출력(output_config.format)으로 강제한다. 후처리로 추론 누출을 걷어내지 않는다.
+- 스타일·숫자는 코드가 계산해 프롬프트에 넣고, 나온 결과도 코드가 검증한다(불일치 시 1회 재생성).
+- few-shot은 고정 샘플이 아니라 "지금 입력과 비슷한 과거 상황"을 검색해 넣는다.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
 import re
+from collections import Counter
 from datetime import datetime
 
 import anthropic
@@ -43,18 +50,12 @@ CANNED_REPLIES = ["ㅇㅇ 근데 그건 네 생각이고", "바쁘다니까 자�
 CURSES = ["읽씹하던 그 손가락,\n앞으로 오타만 나거라", "너의 모든 소개팅에\n어색한 침묵이 깃들기를", "새 연애 3일 만에\n전 애인 얘기 튀어나와라",
           "너의 인스타 스토리\n조회수 평생 한 자리수", "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
 
-
 _META = ("시뮬레이터", "simulat", "역할", "샘플", "사용자", "assistant", "respond", "keep it", "per the")
-
-
-def _clean_reply(text: str) -> str:
-    """모델이 추론을 본문에 섞어 내놓아도 실제 카톡 한 줄만 남긴다."""
-    lines = [l.strip().strip('"“”') for l in text.splitlines() if l.strip()]
-    lines = [l for l in lines if not any(k in l.lower() for k in _META)]
-    if not lines:
-        return ""
-    reply = lines[-1]
-    return reply[:80]
+_RE_POLITE = re.compile(r"(요|니다|세요|죠|십시오)[.!?~ㅠㅜ ]*$")
+_RE_ASCII = re.compile(r"[A-Za-z]{3,}")
+_RE_NUM = re.compile(r"\d+(?:\.\d+)?")
+_RE_HANGUL = re.compile(r"[가-힣]{2,}")
+_RE_HARM = re.compile(r"죽|피[를가]|칼|암[에이]|병[에이]|사고|장애|자살|폭[행력]|강간|자해|불구")
 
 
 def _fmt_min(m: float | None) -> str:
@@ -65,91 +66,272 @@ def _fmt_min(m: float | None) -> str:
     return f"{m:.0f}분" if m < 60 else (f"{m/60:.1f}시간" if m < 1440 else f"{m/1440:.1f}일")
 
 
+def _pct(xs: list, q: float):
+    if not xs:
+        return 0
+    s = sorted(xs)
+    return s[min(len(s) - 1, int(len(s) * q))]
+
+
+def _bigrams(s: str) -> set[str]:
+    t = re.sub(r"[^가-힣a-zA-Z0-9ㅋㅎㅠㅜ]", "", s)
+    return {t[i:i + 2] for i in range(len(t) - 1)} or {t}
+
+
+def _sim(a: str, b: str) -> float:
+    A, B = _bigrams(a), _bigrams(b)
+    return len(A & B) / len(A | B) if A and B else 0.0
+
+
+def _text(resp) -> str:
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
+def _json(resp) -> dict:
+    t = _text(resp).strip()
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", t, re.S)
+        return json.loads(m.group(0)) if m else {}
+
+
+def _seed(*parts) -> random.Random:
+    return random.Random(int(hashlib.md5("|".join(map(str, parts)).encode()).hexdigest()[:8], 16))
+
+
 class Funeral:
     def __init__(self, all_msgs: list[Message], me: str, target: str, now: datetime, persona: dict | None):
         self.all, self.me, self.target, self.now = all_msgs, me, target, now
         self.persona = persona or {}
         self.rel = relationship_messages(all_msgs, me, target)
         self.brief = rel_mod.build(all_msgs, me, target, now)
+        self._turns_cache: list[dict] | None = None
+        self._profile_cache: dict | None = None
 
     def context_line(self) -> str:
         p = self.persona
         bits = []
         if p.get("ending"):
             bits.append(f"이별 방식(사용자 진술): {ENDING_KO.get(p['ending'], p['ending'])}")
+        if p.get("started_at"):
+            bits.append(f"관계 시작일(사용자 진술): {p['started_at']}")
         if p.get("ended_at"):
             bits.append(f"헤어진 날: {p['ended_at']}")
         if p.get("context"):
             bits.append(f"사용자가 설명한 상황: {p['context'][:400]}")
         return "\n".join(bits) if bits else "(사용자가 추가로 알려준 이별 상황 없음)"
 
+    def _started(self) -> datetime | None:
+        s = self.persona.get("started_at")
+        try:
+            return datetime.fromisoformat(s) if s else None
+        except ValueError:
+            return None
+
     # ------------------------------------------------------------ 상대 말투 자료
-    def their_style_pack(self) -> dict:
-        theirs = [m for m in self.rel if m.sender == self.target and not m.is_media and len(m.text.strip()) > 1]
-        st = stats.my_style(theirs, self.target)
-        # 상황별 예시: 내가 감정/질문을 던졌을 때 상대가 어떻게 받았나 (페어)
-        pairs = []
-        for i in range(1, len(self.rel)):
-            a, b = self.rel[i - 1], self.rel[i]
-            if a.sender == self.me and b.sender == self.target and not b.is_media and len(pairs) < 40:
-                pairs.append((a.text[:80], b.text[:120]))
-        return {"style": st, "examples": [m.text for m in theirs[-40:]], "pairs": pairs[-25:]}
+    def turns(self) -> list[dict]:
+        """같은 사람이 연달아 보낸 메시지 묶음(=카톡 '턴'). 미디어 제외, 30분 넘게 비면 새 턴."""
+        if self._turns_cache is not None:
+            return self._turns_cache
+        out: list[dict] = []
+        for m in self.rel:
+            if m.is_media or not m.text.strip():
+                continue
+            if out and out[-1]["sender"] == m.sender and (m.ts - out[-1]["end"]).total_seconds() < 1800:
+                out[-1]["texts"].append(m.text.strip()); out[-1]["end"] = m.ts
+            else:
+                out.append({"sender": m.sender, "texts": [m.text.strip()], "start": m.ts, "end": m.ts})
+        self._turns_cache = out
+        return out
+
+    def pairs(self) -> list[dict]:
+        """내 턴 → 바로 이어진 상대 턴 (6시간 안). {'me': str, 'them': [bubbles], 'gap_min': float, 'ts': datetime}"""
+        ts = self.turns()
+        out = []
+        for a, b in zip(ts, ts[1:]):
+            if a["sender"] == self.me and b["sender"] == self.target:
+                gap = (b["start"] - a["end"]).total_seconds() / 60
+                if gap <= 360:
+                    out.append({"me": " / ".join(a["texts"])[:120], "them": b["texts"][:4], "gap_min": gap, "ts": b["start"]})
+        return out
+
+    def profile(self) -> dict:
+        """상대 말투의 수치 프로필. 프롬프트에 넣고, 출력 검증에도 쓴다."""
+        if self._profile_cache is not None:
+            return self._profile_cache
+        theirs = [t for t in self.turns() if t["sender"] == self.target]
+        bubbles = [b for t in theirs for b in t["texts"]]
+        n = max(1, len(bubbles))
+        st = stats.my_style([m for m in self.rel if m.sender == self.target], self.target)
+        lens = [len(b) for b in bubbles]
+        counts = [len(t["texts"]) for t in theirs]
+        # 붙여넣은 코드/영어 토큰(price, px, rng…)이 섞이므로 한글 표현만
+        top_words = [w for w, _ in st.get("top_words", []) if _RE_HANGUL.fullmatch(w)][:12]
+        starts = Counter(b.split()[0][:3] if b.split() else b[:2] for b in bubbles if len(b) >= 2)
+        prof = {
+            "n": len(bubbles),
+            "len_p25": _pct(lens, .25), "len_p50": _pct(lens, .5), "len_p75": _pct(lens, .75), "len_p95": _pct(lens, .95),
+            "bubbles_p50": _pct(counts, .5), "bubbles_p90": _pct(counts, .9), "counts": counts,
+            "polite": round(sum(1 for b in bubbles if _RE_POLITE.search(b)) / n, 3),
+            "period": round(sum(1 for b in bubbles if b.endswith(".")) / n, 3),
+            "kkk": st.get("kkk_ratio", 0), "question": st.get("question_ratio", 0),
+            "exclaim": st.get("exclaim_ratio", 0), "emoji": st.get("emoji_ratio", 0),
+            "short_ack": round(sum(1 for b in bubbles if len(b) <= 3) / n, 3),
+            "top_words": top_words,
+            "starts": [w for w, _ in starts.most_common(10)],
+            "late_night": st.get("late_night_ratio"),
+        }
+        self._profile_cache = prof
+        return prof
+
+    def _profile_lines(self) -> list[str]:
+        p = self.profile()
+        L = [f"- 버블 하나 길이: 절반이 {p['len_p50']}자 이하, 4분의 3이 {p['len_p75']}자 이하. {p['len_p95']}자를 넘는 건 20개 중 1개."]
+        L.append(f"- 한 번에 보내는 버블 수: 보통 {p['bubbles_p50']}개, 많아야 {p['bubbles_p90']}개.")
+        L.append("- 존댓말: " + ("거의 안 씀(반말)" if p["polite"] < .1 else f"섞어 씀({p['polite']:.0%})" if p["polite"] < .6 else "존댓말 위주"))
+        L.append(f"- ㅋㅋ: 버블의 {p['kkk']:.0%}에 등장" + (" (거의 안 씀)" if p["kkk"] < .05 else " (자주)" if p["kkk"] > .4 else ""))
+        L.append(f"- 물음표 {p['question']:.0%}, 느낌표 {p['exclaim']:.0%}, 이모지 {p['emoji']:.0%}, 마침표로 끝남 {p['period']:.0%}, 3자 이하 단답 {p['short_ack']:.0%}")
+        if p["top_words"]:
+            L.append(f"- 자주 쓰는 표현: {', '.join(p['top_words'])}")
+        if p["starts"]:
+            L.append(f"- 버블을 자주 시작하는 말(빈도순): {', '.join(p['starts'])} — 이 분포대로 다양하게. 한 표현만 반복하면 티 남.")
+        return L
+
+    def retrieve(self, query: str, k: int = 6) -> list[dict]:
+        """지금 사용자 입력과 가장 비슷한 과거 '내 말'을 찾아, 그때 상대가 실제로 어떻게 받았는지 돌려준다."""
+        ps = self.pairs()
+        scored = sorted(((_sim(query, p["me"]), i) for i, p in enumerate(ps)), reverse=True)
+        picked = [ps[i] for s, i in scored[:k] if s > 0.05]
+        return picked
 
     def summon_system(self) -> str:
-        p = self.their_style_pack()
-        st = p["style"]
-        persona_line = ", ".join(x for x in [self.persona.get("mbti"), ATTACH_KO.get(self.persona.get("attachment") or "")] if x)
+        p = self.profile()
         b = self.brief
-        return f"""너는 사용자의 전 연인/썸 상대 '{self.target}'의 카카오톡 말투를 그대로 복제한 시뮬레이터야. 사용자가 미련 섞인 말을 던지면 '{self.target}'이라면 실제로 보냈을 법한 답을 한다.
+        recent = [x for x in self.pairs()][-14:]
+        persona_line = ", ".join(x for x in [self.persona.get("mbti"), ATTACH_KO.get(self.persona.get("attachment") or "")] if x)
+        pair_lines = "\n".join(f"- 나: {x['me']}\n  {self.target}: " + " | ".join(x["them"]) for x in recent)
+        return f"""너는 '{self.target}'이 카톡에서 실제로 어떻게 답하는지 재현하는 시뮬레이터다. 사용자는 {self.target}의 전 연인/썸이고, 지금 미련 섞인 톡을 던진다. 사용자는 이게 시뮬레이터라는 걸 알고 있고, 원하는 건 위로가 아니라 "이 사람이라면 진짜 이렇게 답했겠구나" 하는 현실감이다.
 
-## 이 사람의 실제 말투 (데이터)
-- 평균 {st.get('avg_len')}자, 중앙값 {st.get('median_len')}자. 이보다 길게 쓰지 마.
-- ㅋㅋ 사용률 {st.get('kkk_ratio')}, 물음표 {st.get('question_ratio')}, 느낌표 {st.get('exclaim_ratio')}, 이모지 {st.get('emoji_ratio')}. 이 비율을 벗어나지 마.
-- 자주 쓰는 표현: {', '.join(w for w, _ in st.get('top_words', [])[:12])}
+## {self.target}의 말투 (카톡 {p['n']}개에서 코드로 계산)
+{chr(10).join(self._profile_lines())}
 - 성격 힌트(사용자 입력): {persona_line or '없음'}
-- 관계 현재 상태(데이터): {b['stages']['current_label']}, 최근 상대 답장 중앙값 {_fmt_min(b['symmetry']['reply']['their_median_min'])}
-- {self.context_line()}  ← 데이터와 다르면 이 사용자 진술을 우선해. (예: 데이터는 '썸'이지만 사용자가 '잠수로 끝났다'면 이미 끝난 관계로 연기)
+- 관계 상태: {b['stages']['current_label']}. 상대 답장 중앙값 {_fmt_min(b['symmetry']['reply']['their_median_min'])}.
+- {self.context_line().replace(chr(10), ' / ')}
+  → 데이터와 다르면 사용자 진술을 우선한다. 끝난 관계면 끝난 사람처럼: 붙잡지 않고, 미지근하고, 설명이 짧다.
 
-## 실제로 보낸 메시지 샘플 (이 톤 그대로)
-{chr(10).join('- ' + e for e in p['examples'][-25:])}
+## 최근 실제 대화 (나 → {self.target}). "|"는 버블 구분
+{pair_lines}
 
-## 내가 말했을 때 → 이 사람의 실제 반응 (페어)
-{chr(10).join(f'- 나: {a} → {self.target}: {b_}' for a, b_ in p['pairs'][-15:])}
+## 답하는 법
+- 위 사람이 지금 이 톡을 받았을 때 보낼 법한 버블을 그대로 쓴다. 띄어쓰기·맞춤법·어미·ㅋㅋ 습관까지 위 샘플 그대로. 더 다정하거나 더 설명적이면 실패.
+- 같은 시작("ㅇㅇ", "아니")을 매번 반복하지 않는다. 샘플의 다양한 시작을 따른다.
+- 이어지는 시스템 메시지에 "비슷한 상황에서 실제로 했던 답"과 "이번 답의 길이·버블 수"가 온다. 그걸 가장 우선한다.
+- 자해·죽고 싶다는 신호가 보이면 시뮬을 멈추고 이렇게만 답한다: "이건 시뮬레이터야. 힘들면 1393(자살예방상담)에 전화해줘"
+- 출력은 JSON {{"bubbles": ["...", "..."]}} 하나. 각 원소가 카톡 버블 하나. 따옴표·설명·영어 없음."""
 
-## 규칙
-1. 한 번에 한 메시지, 실제 카톡처럼 짧게. 위 샘플보다 다정하거나 설명적이면 실패.
-2. 이 사람은 이미 멀어진 상태다. 사용자를 붙잡지 말고, 실제 패턴대로 미지근하게/짧게/회피적으로 답해. 그게 사용자를 위한 '현실 직시'다.
-3. AI 티 금지: 완벽한 맞춤법·존댓말 전환·"~인 것 같아요!"·과한 공감 문구 금지. 샘플의 띄어쓰기·어미 습관을 따라 해.
-4. 절대 실제 사람인 척 사용자를 속이지 마 — 사용자는 시뮬레이터임을 알고 있다. 자해·위험 신호가 보이면 시뮬을 멈추고 "이건 시뮬레이터야. 힘들면 1393(자살예방상담)에 전화해줘"라고 말해.
-5. 출력은 **딱 한 줄, 메시지 본문만.** 따옴표·설명·생각 과정·영어 절대 금지. 첫 글자부터 카톡 메시지여야 한다."""
+    def _turn_spec(self, query: str, hist: list[dict]) -> tuple[str, dict]:
+        """이번 답의 버블 수·길이를 상대의 실제 분포에서 샘플링해 지정하고, 이 대화에서 이미 쓴 시작 표현을 알려준다."""
+        p = self.profile()
+        rng = _seed(query, len(hist))
+        counts = [c for c in p["counts"] if c <= 3] or [1]
+        n_bub = rng.choice(counts)
+        lo, hi = max(2, p["len_p25"]), max(p["len_p25"] + 4, p["len_p75"])
+        target_len = rng.randint(lo, hi)
+        sim = self.retrieve(query)
+        lines = []
+        if sim:
+            lines.append(f"## 비슷한 말을 들었을 때 {self.target}이 실제로 한 답 (이 결을 우선 참고)")
+            lines += [f"- 나: {x['me']}\n  {self.target}: " + " | ".join(x["them"]) for x in sim]
+        used = [w for m in hist if m["role"] == "assistant" for w in [m["content"].split("\n")[0].split(" ")[0][:3]] if w]
+        lines.append(f"## 이번 답 스펙\n- 버블 {n_bub}개, 버블당 {target_len}자 안팎 (합쳐서 {n_bub * target_len}자 넘기지 말 것).")
+        if used:
+            lines.append(f"- 이 대화에서 이미 쓴 시작 표현: {', '.join(dict.fromkeys(used))} → 이번엔 다른 시작으로.")
+        return "\n".join(lines), {"n_bubbles": n_bub, "target_len": target_len, "similar": len(sim)}
+
+    def style_check(self, bubbles: list[str]) -> list[str]:
+        """코드가 계산한 상대 스타일과 어긋나는 점. 비면 통과."""
+        p = self.profile()
+        issues = []
+        if not bubbles or not any(b.strip() for b in bubbles):
+            return ["empty"]
+        joined = " ".join(bubbles)
+        max_len = max(25, int(p["len_p95"] * 1.2))
+        if any(len(b) > max_len for b in bubbles):
+            issues.append(f"버블이 너무 김({max(len(b) for b in bubbles)}자 > {max_len}자)")
+        if p["polite"] < .1 and any(_RE_POLITE.search(b) for b in bubbles):
+            issues.append("존댓말 사용(이 사람은 반말)")
+        if p["polite"] > .8 and not any(_RE_POLITE.search(b) for b in bubbles):
+            issues.append("반말 사용(이 사람은 존댓말)")
+        if p["kkk"] < .05 and "ㅋㅋ" in joined:
+            issues.append("ㅋㅋ 사용(이 사람은 거의 안 씀)")
+        if p["exclaim"] < .02 and "!" in joined:
+            issues.append("느낌표 사용(이 사람은 안 씀)")
+        if p["emoji"] < .02 and stats._RE_EMOJI.search(joined):
+            issues.append("이모지 사용(이 사람은 안 씀)")
+        if _RE_ASCII.search(joined) or any(k in joined.lower() for k in _META):
+            issues.append("영어/메타 단어")
+        return issues
 
     async def summon(self, messages: list[dict]) -> dict:
+        hist = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")]
+        if not hist or hist[-1]["role"] != "user":
+            return {"reply": random.choice(CANNED_REPLIES), "bubbles": None, "fallback": True}
+        query = hist[-1]["content"]
+        spec_text, spec = self._turn_spec(query, hist)
+        system = [{"type": "text", "text": self.summon_system(), "cache_control": {"type": "ephemeral"}}]
+        fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"bubbles": {"type": "array", "items": {"type": "string"}}},
+                                                 "required": ["bubbles"], "additionalProperties": False}}
+        msgs = hist + [{"role": "system", "content": spec_text}]
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "medium"}, system=self.summon_system(),
-                                                messages=[{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")])
-            text = "".join(b.text for b in resp.content if b.type == "text")
-            reply = _clean_reply(text)
-            return {"reply": reply or random.choice(CANNED_REPLIES)}
-        except Exception:  # noqa: BLE001
-            return {"reply": random.choice(CANNED_REPLIES), "fallback": True}
+            bubbles, issues, retried = [], ["empty"], False
+            for attempt in range(2):
+                resp = await client.messages.create(model=MODEL, max_tokens=3000, output_config={"effort": "medium", "format": fmt},
+                                                    system=system, messages=msgs)
+                bubbles = [str(x).strip() for x in (_json(resp).get("bubbles") or []) if str(x).strip()][:3]
+                issues = self.style_check(bubbles)
+                if not issues:
+                    break
+                retried = True
+                msgs = hist + [{"role": "system", "content": spec_text + f"\n\n## 직전 시도의 문제 (고쳐서 다시)\n- " + "\n- ".join(issues)}]
+            if not bubbles:
+                return {"reply": random.choice(CANNED_REPLIES), "bubbles": None, "fallback": True}
+            if issues:   # 재생성도 실패 → 코드가 최소 정리
+                bubbles = [b.replace("!", "").strip()[:max(25, int(self.profile()["len_p95"] * 1.2))] for b in bubbles]
+            return {"reply": "\n".join(bubbles), "bubbles": bubbles,
+                    "check": {"ok": not issues, "retried": retried, "issues": issues, **spec}}
+        except Exception as e:  # noqa: BLE001
+            return {"reply": random.choice(CANNED_REPLIES), "bubbles": None, "fallback": True, "error": str(e)[:200]}
 
     # ------------------------------------------------------------ 진정성 진단서
-    def _facts(self) -> str:
+    def _facts(self) -> list[str]:
+        """코드로 계산한 사실. 사용자가 시작일을 알려줬으면 그 이후 구간만."""
         b = self.brief
         r = b["symmetry"]["reply"]; bi = b["bias"]; w = b["waiting"]; sg = b["signals"]
-        lines = [
-            f"- 기간 {b['range'][0][:10]} ~ {b['range'][1][:10]}, 메시지 {b['n_messages']}개",
-            f"- 단계 흐름: {' → '.join(s['label'] for s in b['stages']['segments'])} (현재 {b['stages']['current_label']})",
-            f"- 온도 {b['temperature'].get('temp')}°, 주간 변화 {b['temperature'].get('delta_week')}",
-            f"- 내 답장 중앙값 {_fmt_min(r['my_median_min'])} / 상대 {_fmt_min(r['their_median_min'])}",
-            f"- 나는 이 사람에게 다른 사람보다 {bi['reply_speed']['times_faster']}배 빨리 답함 ({_fmt_min(bi['reply_speed']['to_target_min'])} vs {_fmt_min(bi['reply_speed']['to_others_min'])})",
-            f"- 썸 신호 판정: {sg['title']} (나 {sg['me']['score']} / 상대 {sg['them']['score']})",
+        start = self._started()
+        rng0 = max(b["range"][0][:10], start.date().isoformat()) if start else b["range"][0][:10]
+        end = self.persona.get("ended_at") or b["range"][1][:10]
+        n_msgs = sum(1 for m in self.rel if not start or m.ts >= start)
+        segs = [s for s in b["stages"]["segments"] if not start or s.get("start", "9999") >= start.date().isoformat()] or b["stages"]["segments"][-3:]
+        labels = []
+        for s in segs:
+            if not labels or labels[-1] != s["label"]:
+                labels.append(s["label"])
+        facts = [
+            f"기간 {rng0} ~ {end}, 메시지 {n_msgs}개",
+            f"단계 흐름: {' → '.join(labels[-5:])} (마지막 {b['stages']['current_label']})",
+            f"온도 {b['temperature'].get('temp')}°, 최근 주간 변화 {b['temperature'].get('delta_week')}",
+            f"답장 중앙값: 나 {_fmt_min(r['my_median_min'])} / 상대 {_fmt_min(r['their_median_min'])}",
+            f"신호 판정: {sg['title']} (나 {sg['me']['score']} / 상대 {sg['them']['score']})",
         ]
+        if bi["reply_speed"].get("times_faster"):   # 내 다른 방이 없으면 baseline이 없어 None → 사실에서 뺀다
+            facts.insert(4, f"나는 이 사람에게 다른 사람들보다 {bi['reply_speed']['times_faster']}배 빨리 답함 ({_fmt_min(bi['reply_speed']['to_target_min'])} vs 남들에겐 {_fmt_min(bi['reply_speed']['to_others_min'])})")
         if w:
-            lines.append(f"- 상대 마지막 메시지 “{w['text']}” 에 {w['age_hours']}시간째 내가 답 안 함 (평소 {_fmt_min(w['usual_reply_min'])})")
-        for e in b["events"][:4]:
-            lines.append(f"- {e['week_start']} 주: 온도 {e['delta']:+}° ({e['top_factor']['label'] if e['top_factor'] else ''})")
-        return "\n".join(lines)
+            facts.append(f"상대 마지막 메시지 “{w['text'][:40]}” 에 {w['age_hours']}시간째 내가 답 안 함 (평소 {_fmt_min(w['usual_reply_min'])})")
+        events = [e for e in b["events"] if not start or e["week_start"] >= start.date().isoformat()][-3:]
+        for e in events:
+            facts.append(f"{e['week_start']} 주: 온도가 전주보다 {e['delta']:+}° 변함 (주요 요인: {e['top_factor']['label'] if e['top_factor'] else '–'})")
+        return facts
 
     def template_eulogy(self) -> str:
         b = self.brief; r = b["symmetry"]["reply"]; bi = b["bias"]; w = b["waiting"]
@@ -163,43 +345,166 @@ class Funeral:
         parts.append("그 마음, 당신은 다시 채울 수 있어요. 오늘은 여기까지. 잘 보내주세요. 🕊️")
         return " ".join(parts)
 
-    async def eulogy(self) -> dict:
-        prompt = f"""아래는 사용자와 '{self.target}'의 카톡 데이터에서 코드로 계산한 사실이야. 이 사실만 근거로 '진정성 있는 팩폭 위로 진단서'를 써.
+    _EULOGY_BANNED = re.compile(r"마음이 (식|떠)|질렸|싫어(졌|하)|귀찮|사랑하지 않|다른 사람이 생|속으로는|두 분|양쪽 다|서로에게|매달린 게 아니|시간이 약|더 좋은 사람|탓이 아니")
+    _EULOGY_CLOSE = re.compile(r"놓아|보내 ?[주줘]|괜찮아요|여기까지|내려놓|두어도|둬도|접어[두둬]|안 ?해도 (돼|되)|않아도 (돼|되)")
 
-{self._facts()}
+    def eulogy_check(self, text: str, facts: list[str]) -> list[str]:
+        issues = []
+        n = len(text)
+        if n < 120:
+            issues.append(f"너무 짧음({n}자)")
+        if n > 380:
+            issues.append(f"너무 김({n}자, 380자 이하)")
+        nums = {x for f in facts for x in _RE_NUM.findall(f)} - {"0"}
+        used = {x for x in nums if x in text}
+        if len(used) < 2:
+            issues.append(f"사실 인용 부족(숫자 {len(used)}개, 2개 이상)")
+        if len(_RE_NUM.findall(text)) > 5:
+            issues.append("숫자 나열 과다(5개 이하)")
+        m = self._EULOGY_BANNED.search(text)
+        if m:
+            issues.append(f"금지 표현 '{m.group(0)}'")
+        if not self._EULOGY_CLOSE.search(text[-60:]):
+            issues.append("마지막 문장이 놓아주기로 끝나지 않음")
+        if len(stats._RE_EMOJI.findall(text)) > 1:
+            issues.append("이모지 2개 이상")
+        return issues
+
+    async def eulogy(self) -> dict:
+        facts = self._facts()
+        fact_block = "\n".join(f"[F{i + 1}] {f}" for i, f in enumerate(facts))
+        prompt = f"""'{self.target}'과의 관계에 대한 진정성 진단서를 써. 읽는 사람은 이 관계를 막 잃은 사용자야. 아래 사실은 카톡 데이터에서 코드로 계산한 것이고, 진단서는 이 사실 위에서만 선다.
+
+[사실]
+{fact_block}
 
 [사용자가 알려준 이별 상황]
 {self.context_line()}
 
-규칙: 5~6문장, 반말 아닌 부드러운 존댓말("~에요"), 숫자는 위 사실에서만 인용(최소 2개), 상대의 마음을 단정하지 말고 관계의 모양만 말해, 사용자가 알려준 이별 상황이 있으면 그 맥락에 맞춰(데이터 판정과 달라도 사용자 진술 우선), 마지막 문장은 놓아주라는 말로 끝내. 이모지 1개까지. 제목 없이 본문만."""
+[구조 — 이 순서로, 5~6문장, 250~350자]
+1. 관찰 (2문장): 사실 중 2개만 골라 숫자를 그대로 인용하며 관계의 '모양'을 말한다. 상대가 왜 그랬는지는 말하지 않는다 — 우리는 상대 마음을 모른다. 대화의 형태만 안다.
+2. 인정 (2문장): 사용자가 쏟은 마음을 사실로 짚는다 (답장 속도 편향, 기다린 시간 같은 '나' 쪽 숫자). 그 마음이 잘못이 아니었다고 말한다.
+3. 놓아주기 (1~2문장): 관계를 보내주라는 말로 끝낸다. 위로는 짧고, 명령이 아니라 허락처럼.
+
+[뼈대 — 빈칸을 이 관계의 사실로 채운다. 문장은 네가 새로 쓴다]
+관찰: 「(기간·양 사실)했고, (변화 사실)했어요.」 「그 사람 마음은 모르지만, 대화의 모양은 (사실이 보여주는 형태)였어요.」
+인정: 「당신은 (나 쪽 숫자 사실)했어요.」 「그건 (부정적 해석)이 아니라 (긍정적 재해석)이었어요.」
+놓아주기: 「(짧은 공감) — 이제 (보내주라는 허락).」
+
+톤 기준: 상담사가 아니라 오래 본 친구가 조용히 말해주는 느낌. 뻔한 위로 문구("시간이 약", "더 좋은 사람", "당신 탓이 아니에요")는 쓰지 않는다. 이 사람의 숫자가 아니면 못 쓰는 문장이어야 한다.
+
+[하지 말 것]
+- 상대의 마음·의도 단정 ("마음이 식었다", "질렸다", "다른 사람이 생겼다")
+- "두 분", "서로에게" 같은 양쪽 관점 — 이 진단서는 사용자 한 사람에게 쓰는 편지다
+- 숫자는 전체에서 3~4개만. 5개를 넘기면 검증에서 탈락한다. 날짜는 1개까지, 단계 이름을 전부 나열하지 않는다
+- 상투적 반전·위로 ("매달린 게 아니라", "시간이 약", "더 좋은 사람", "당신 탓이 아니에요")
+- 이모지는 마지막에 1개까지
+
+말투: 부드러운 존댓말("~에요"). 제목 없이 본문만. 사용자를 부를 땐 '당신'."""
+        fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"text": {"type": "string"}, "cited": {"type": "array", "items": {"type": "string"}}},
+                                                 "required": ["text", "cited"], "additionalProperties": False}}
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=6000, output_config={"effort": "medium"}, messages=[{"role": "user", "content": prompt}])
-            return {"text": "".join(b.text for b in resp.content if b.type == "text").strip()}
-        except Exception:  # noqa: BLE001
-            return {"text": self.template_eulogy(), "fallback": True}
+            msgs = [{"role": "user", "content": prompt}]
+            text, issues, first_issues = "", ["empty"], []
+            for attempt in range(2):
+                resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "medium", "format": fmt}, messages=msgs)
+                data = _json(resp)
+                text = str(data.get("text", "")).strip()
+                issues = self.eulogy_check(text, facts)
+                if not issues:
+                    break
+                first_issues = issues
+                msgs = [{"role": "user", "content": prompt}, {"role": "assistant", "content": _text(resp)},
+                        {"role": "user", "content": "코드 검증에서 걸렸어. 아래를 고쳐서 같은 JSON으로 다시 써.\n- " + "\n- ".join(issues)}]
+            if not text:
+                return {"text": self.template_eulogy(), "fallback": True}
+            return {"text": text, "check": {"ok": not issues, "retried": bool(first_issues), "first_issues": first_issues, "issues": issues}}
+        except Exception as e:  # noqa: BLE001
+            return {"text": self.template_eulogy(), "fallback": True, "error": str(e)[:200]}
 
     # ------------------------------------------------------------ 저주 부적 (애착유형별 사자성어 + 맞춤 한 줄)
+    def _curse_facts(self) -> list[str]:
+        b = self.brief; r = b["symmetry"]["reply"]; w = b["waiting"]; p = self.profile()
+        facts = [f"답장 중앙값 {_fmt_min(r['their_median_min'])}"]
+        if p["top_words"]:
+            facts.append(f"자주 쓰는 말: {', '.join(p['top_words'][:6])}")
+        facts.append(f"버블 절반이 {p['len_p50']}자 이하 단답" if p["len_p50"] <= 8 else f"버블 중앙값 {p['len_p50']}자")
+        if p["kkk"] > .3:
+            facts.append(f"ㅋㅋ를 버블 {p['kkk']:.0%}에 붙임")
+        elif p["kkk"] < .05:
+            facts.append("ㅋㅋ를 거의 안 씀")
+        if p["late_night"] and p["late_night"] > .25:
+            facts.append(f"메시지 {p['late_night']:.0%}가 새벽")
+        if p["short_ack"] > .3:
+            facts.append(f"3자 이하 단답이 {p['short_ack']:.0%}")
+        if w:
+            facts.append(f"마지막 메시지 “{w['text'][:30]}” 에 {w['age_hours']}시간째 서로 침묵")
+        if self.persona.get("ending"):
+            facts.append(ENDING_KO.get(self.persona["ending"], self.persona["ending"]))
+        random.shuffle(facts)   # 첫 항목에 앵커링돼 매번 같은 패턴만 쓰는 걸 막는다
+        return facts
+
+    def _pick_curse(self, cands: list[dict], facts: list[str]) -> tuple[str | None, list[str]]:
+        """코드 기준(22자 이하, 위해 표현 없음, 상대 패턴 단어/숫자 포함) 통과한 후보 중 무작위 하나.
+        첫 후보를 고르면 모델이 늘 첫 번째 사실(답장 속도)로 수렴해서 부적이 매번 똑같아진다."""
+        p = self.profile()
+        keys = set(p["top_words"][:8]) | {x for f in facts for x in _RE_NUM.findall(f)} | {"읽씹", "답장", "ㅋㅋ", "새벽", "단답", "잠수", "분", "시간"}
+        log, ok = [], []
+        for c in cands:
+            line = str(c.get("line", "")).strip().replace("\n", " ")
+            if len(line) > 2 and line[0] == line[-1] and line[0] in "\"'" and line.count(line[0]) == 2:
+                line = line[1:-1].strip()   # 통째로 감싼 따옴표만 벗긴다 (안쪽 인용 부호는 보존)
+            if not line:
+                continue
+            if len(line) > 26:
+                log.append(f"{line} → 길이 {len(line)}"); continue
+            if _RE_HARM.search(line):
+                log.append(f"{line} → 위해 표현"); continue
+            if not any(k in line for k in keys):
+                log.append(f"{line} → 패턴 없음"); continue
+            ok.append(line)
+        return (random.choice(ok) if ok else None), log
+
     async def curse(self) -> dict:
-        b = self.brief; r = b["symmetry"]["reply"]; w = b["waiting"]
         attach = self.persona.get("attachment")
         hanja, reading, meaning = AMULETS.get(attach, AMULETS[None])[0]
-        st = stats.my_style([m for m in self.rel if m.sender == self.target], self.target)
-        prompt = f"""부적에 이미 큰 글씨로 '{hanja.replace(chr(10), ' ')}'({reading}: {meaning})이 박혀 있어. 그 아래 작게 들어갈 '맞춤 저주 한 줄'을 써.
-'{self.target}'의 카톡 패턴: 답장 중앙값 {_fmt_min(r['their_median_min'])}, 자주 쓰는 말 {', '.join(w_ for w_, _ in st.get('top_words', [])[:6])}, 평균 {st.get('avg_len')}자 단답{(', 마지막 메시지에 %s시간째 미응답' % w['age_hours']) if w else ''}.
-{self.context_line()}
-조건: 한 줄(20자 이내), 잔인/신체 위해/혐오 금지, 유치하고 소심하게 웃긴 저주, 상대의 실제 패턴 하나를 반드시 넣기. 예: "잘자 보낸 밤마다 와이파이 끊겨라". 문구만 출력."""
+        facts = self._curse_facts()
+        prompt = f"""부적에 이미 큰 글씨로 '{hanja.replace(chr(10), ' ')}'({reading}: {meaning})이 박혀 있어. 그 아래 작게 들어갈 '{self.target}' 맞춤 저주 한 줄 후보를 3개 써.
+
+[{self.target}의 카톡 패턴 (코드 계산)]
+{chr(10).join('- ' + f for f in facts)}
+
+[저주의 결]
+- 유치하고 소심하다. 진짜 해코지가 아니라 "그 버릇 그대로 돌려받아라" 수준. 신체·질병·사고·죽음 없음.
+- 위 패턴 중 하나를 그대로 박는다 — 그 사람만 찔리는 저주가 좋은 저주다. 3개가 서로 다른 패턴을 쓰게.
+- 22자 이내 한 줄 (공백 포함, 넘으면 탈락). 명령형/기원형으로 끝난다 ("~해라", "~되거라", "~기를").
+
+[좋은 예 — 결만 참고, 패턴은 이 사람 것으로]
+- "잘자" 보낸 밤마다 와이파이 끊겨라
+- 'ㅇㅇ' 칠 때마다 자동완성 '응 사랑해'
+- 새 연애 3일 만에 내 얘기 튀어나와라
+- 1분컷 답장, 이제 배달앱한테만 받아라
+- 새벽 2시 카톡 알림, 평생 광고만 오거라
+- 읽씹한 만큼 엘리베이터 코앞에서 닫혀라
+
+JSON: {{"candidates": [{{"line": "...", "pattern": "쓴 패턴"}}, ...]}}"""
         base = {"hanja": hanja, "reading": reading, "meaning": meaning, "attachment": attach,
                 "attachment_label": ATTACH_KO.get(attach or "", "유형 미상")}
+        fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"candidates": {"type": "array", "items": {
+            "type": "object", "properties": {"line": {"type": "string"}, "pattern": {"type": "string"}}, "required": ["line", "pattern"], "additionalProperties": False}}},
+            "required": ["candidates"], "additionalProperties": False}}
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "low"},
+            resp = await client.messages.create(model=MODEL, max_tokens=3000, output_config={"effort": "low", "format": fmt},
                                                 messages=[{"role": "user", "content": prompt}])
-            text = "".join(b_.text for b_ in resp.content if b_.type == "text").strip().strip('"')
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            line = lines[-1] if lines else random.choice(CURSES).replace("\n", " ")
-            return {**base, "line": line[:40], "text": line[:40]}
-        except Exception:  # noqa: BLE001
+            cands = _json(resp).get("candidates") or []
+            line, log = self._pick_curse(cands, facts)
+            if line is None:   # 전부 탈락 → 22자 이하인 첫 후보라도, 그것도 없으면 템플릿
+                short = [str(c.get("line", "")).strip() for c in cands if 0 < len(str(c.get("line", "")).strip()) <= 26 and not _RE_HARM.search(str(c.get("line", "")))]
+                line = short[0] if short else random.choice(CURSES).replace("\n", " ")
+            return {**base, "line": line[:40], "text": line[:40], "candidates": [c.get("line") for c in cands], "rejected": log}
+        except Exception as e:  # noqa: BLE001
             line = random.choice(CURSES).replace("\n", " ")
-            return {**base, "line": line, "text": line, "fallback": True}
+            return {**base, "line": line, "text": line, "fallback": True, "error": str(e)[:200]}
 
 
 # ------------------------------------------------------------ 레전드 썰 매칭 (웹 검색)
@@ -208,10 +513,6 @@ LEGEND_DOMAINS = ["pann.nate.com", "gall.dcinside.com", "m.dcinside.com", "theqo
 LEGEND_SCHEMA_HINT = """{"stories": [{"title": "...", "source": "네이트판 톡 / 디시 연애갤 / 더쿠 ...", "url": "https://...",
   "summary": "글의 상황을 내 말로 2문장 요약 (원문 복사 금지)", "match_points": ["내 데이터와 겹치는 점 1", "겹치는 점 2"],
   "similarity": 0~100 정수, "hit": "현타 포인트 한 문장"}]}"""
-
-
-class _LegendMixin:
-    pass
 
 
 def _extract_json(text: str) -> dict | None:
@@ -236,30 +537,61 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
-async def legends_for(fun: "Funeral") -> dict:
-    """내 관계 데이터 + 사용자 진술을 검색 쿼리로 바꿔 커뮤니티 썰을 실시간 검색·매칭."""
-    b = fun.brief; r = b["symmetry"]["reply"]; w = b["waiting"]; c = b.get("causes") or {}
+def _legend_facts(fun: "Funeral") -> list[str]:
+    b = fun.brief; r = b["symmetry"]["reply"]; w = b["waiting"]
     facts = [
-        f"관계 단계 흐름: {' → '.join(s['label'] for s in b['stages']['segments'])}",
+        f"관계 단계 흐름: {' → '.join(s['label'] for s in b['stages']['segments'][-4:])}",
         f"상대 답장 중앙값 {_fmt_min(r['their_median_min'])}, 내 답장 중앙값 {_fmt_min(r['my_median_min'])}",
         f"나는 이 사람에게 다른 사람보다 {b['bias']['reply_speed']['times_faster']}배 빨리 답함",
     ]
     if w:
         facts.append(f"상대 마지막 메시지 “{w['text'][:40]}” 에 {w['age_hours']}시간째 무응답")
     persona = ", ".join(x for x in [fun.persona.get("mbti"), ATTACH_KO.get(fun.persona.get("attachment") or "")] if x)
+    facts.append(f"상대 성향(사용자 입력): {persona or '미입력'}")
+    facts.append(fun.context_line().replace("\n", " / "))
+    return facts
+
+
+async def _legend_queries(facts: list[str]) -> list[str]:
+    """1단계: 데이터 사실 → 커뮤니티 검색어 3개. 검색은 안 하고 검색어만 만든다."""
+    prompt = f"""아래는 어떤 사람의 연애/이별 상황을 카톡 데이터로 요약한 것이다. 네이트판·디시 연애갤·더쿠 같은 한국 커뮤니티에서 '비슷한 썰'을 찾기 위한 검색어 3개를 만들어.
+
+{chr(10).join('- ' + f for f in facts)}
+
+검색어 규칙: 한국어, 2~4단어, 커뮤니티 사람들이 제목에 실제로 쓰는 말 (예: "회피형 잠수 이별", "읽씹 후 잠수 네이트판", "연락 뜸해지다 헤어짐"). 3개는 서로 다른 각도(이별 방식 / 상대 성향 / 내 행동 패턴)여야 한다. 상황에 없는 걸 지어내지 마."""
+    fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"queries": {"type": "array", "items": {"type": "string"}}},
+                                             "required": ["queries"], "additionalProperties": False}}
+    resp = await client.messages.create(model=MODEL, max_tokens=1500, output_config={"effort": "low", "format": fmt},
+                                        messages=[{"role": "user", "content": prompt}])
+    qs = [str(q).strip() for q in (_json(resp).get("queries") or []) if str(q).strip()]
+    return list(dict.fromkeys(qs))[:3]
+
+
+async def legends_for(fun: "Funeral") -> dict:
+    """내 관계 데이터 + 사용자 진술 → (1) 검색어 생성 → (2) 검색·매칭. 두 단계를 분리해 검색어 품질을 따로 본다."""
+    facts = _legend_facts(fun)
+    try:
+        planned = await _legend_queries(facts)
+    except Exception as e:  # noqa: BLE001
+        planned = []
+        plan_err = str(e)[:120]
+    else:
+        plan_err = None
+    query_block = ("\n".join(f'- "{q}"' for q in planned)) if planned else '- (직접 2~3개 만들어 검색: 예 "회피형 잠수 이별 썰", "읽씹 후 잠수 네이트판")'
     prompt = f"""아래는 사용자의 카톡 데이터로 계산한 관계 사실과, 사용자가 직접 알려준 이별 상황이야.
-이와 **비슷한 상황의 실제 커뮤니티 썰**을 웹에서 찾아서 2~3개 골라줘. 네이트판 톡, 디시 연애갤, 더쿠, 인스티즈, 에펨코리아, 블라인드 같은 곳.
+이와 **비슷한 상황의 실제 커뮤니티 썰**을 웹에서 찾아서 2~3개 골라줘.
 
 [데이터 사실]
-{chr(10).join('- ' + x for x in facts)}
-- 상대 성향(사용자 입력): {persona or '미입력'}
-- {fun.context_line()}
+{chr(10).join('- ' + f for f in facts)}
+
+[검색어 — 각각 web_search 한 번씩 그대로 검색. 결과가 빈약하면 한 번만 변형해서 추가 검색]
+{query_block}
 
 [규칙]
-1. web_search로 2~4번 검색해. 검색어는 한국어로, 상황 키워드 조합 (예: "회피형 잠수 이별 썰", "읽씹 후 잠수 네이트판", "연락 뜸해지다가 잠수").
-2. 실제로 존재하는 글만. URL은 검색 결과에 있던 것 그대로. 지어내지 마.
-3. 요약은 원문을 복사하지 말고 상황만 내 말로 2문장. 실명·연락처 등 개인정보 제외.
-4. 각 썰마다 사용자 데이터와 겹치는 점을 구체적으로 (예: "상대 답장은 빨랐는데 어느 날 갑자기 끊김").
+1. 실제로 존재하는 글만. URL은 검색 결과에 있던 것 그대로. 지어내지 마.
+2. 요약은 원문을 복사하지 말고 상황만 내 말로 2문장. 실명·연락처 등 개인정보 제외.
+3. match_points는 위 [데이터 사실]의 항목을 근거로 구체적으로 ("상대 답장 중앙값 1분 이내였는데 마지막엔 40시간 무응답" 처럼 숫자 포함).
+4. similarity는 겹치는 사실 수에 비례 (1개 40 / 2개 65 / 3개 이상 85+).
 5. 마지막에 아래 JSON만 출력 (설명 금지):
 {LEGEND_SCHEMA_HINT}"""
     try:
@@ -271,7 +603,7 @@ async def legends_for(fun: "Funeral") -> dict:
         for _ in range(4):   # pause_turn(검색이 길어질 때 서버가 중간 정지) 이어받기
             resp = await client.messages.create(model=MODEL, max_tokens=12000, output_config={"effort": "medium"},
                                                 tools=tools, messages=messages)
-            text = "".join(blk.text for blk in resp.content if blk.type == "text")
+            text = _text(resp)
             for blk in resp.content:   # 실제로 던진 검색어 수집 (직접 호출 + 코드 실행 내부 호출)
                 if blk.type == "server_tool_use":
                     inp = getattr(blk, "input", {}) or {}
@@ -284,8 +616,9 @@ async def legends_for(fun: "Funeral") -> dict:
             messages.append({"role": "assistant", "content": resp.content})
         queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))
         data = _extract_json(text) or {}
+        meta = {"queries": queries, "planned": planned, **({"plan_error": plan_err} if plan_err else {})}
         if not data.get("stories"):
-            return {"stories": [], "fallback": True, "reason": f"parse 실패 (stop={resp.stop_reason}, text={text[-160:]!r})", "queries": queries}
+            return {"stories": [], "fallback": True, "reason": f"parse 실패 (stop={resp.stop_reason}, text={text[-160:]!r})", **meta}
         stories = []
         for s in data.get("stories", [])[:3]:
             url = str(s.get("url", ""))
@@ -295,8 +628,8 @@ async def legends_for(fun: "Funeral") -> dict:
                             "summary": str(s.get("summary", ""))[:300], "match_points": [str(x)[:80] for x in (s.get("match_points") or [])][:3],
                             "similarity": int(s.get("similarity", 0) or 0), "hit": str(s.get("hit", ""))[:120]})
         if not stories:
-            return {"stories": [], "fallback": True, "reason": "검색 결과 없음", "queries": queries}
-        return {"stories": stories, "searched": True, "queries": queries,
+            return {"stories": [], "fallback": True, "reason": "검색 결과 없음", **meta}
+        return {"stories": stories, "searched": True, **meta,
                 "basis": {"attachment": ATTACH_KO.get(fun.persona.get("attachment") or "", None), "ending": ENDING_KO.get(fun.persona.get("ending") or "", None)}}
     except Exception as e:  # noqa: BLE001
-        return {"stories": [], "fallback": True, "reason": str(e)[:200]}
+        return {"stories": [], "fallback": True, "reason": str(e)[:200], "planned": planned}
