@@ -6,8 +6,8 @@ type Phase = 'ignite' | 'slam' | 'stamp' | 'done'
 
 export function BurnRitual({ amulet, loading, onClose }: { amulet: Amulet | null; loading: boolean; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>('ignite')
-  const flames = useMemo(() => Array.from({ length: 34 }, (_, i) => ({ i, x: (i * 37) % 100, d: 0.9 + ((i * 7) % 10) / 10, s: 22 + ((i * 13) % 5) * 9, delay: ((i * 11) % 14) / 10 })), [])
-  const embers = useMemo(() => Array.from({ length: 60 }, (_, i) => ({ i, x: (i * 53) % 100, d: 1.6 + ((i * 3) % 12) / 6, s: 3 + (i % 4), delay: ((i * 17) % 20) / 10 })), [])
+  const flames = useMemo(() => Array.from({ length: 24 }, (_, i) => ({ i, x: (i * 37) % 100, d: 0.9 + ((i * 7) % 10) / 10, s: 22 + ((i * 13) % 5) * 9, delay: ((i * 11) % 14) / 10 })), [])
+  const embers = useMemo(() => Array.from({ length: 48 }, (_, i) => ({ i, x: (i * 53) % 100, d: 1.6 + ((i * 3) % 12) / 6, s: 3 + (i % 4), delay: ((i * 17) % 20) / 10 })), [])
 
   useEffect(() => { playIgnite() }, [])
   useEffect(() => {
