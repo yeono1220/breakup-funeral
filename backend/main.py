@@ -49,6 +49,23 @@ async def health():
     return {"ok": True, "service": "breakup-funeral-api"}
 
 
+@app.get("/llm_check")
+async def llm_check():
+    """배포 진단: 키/워크스페이스 존재 여부와 실제 1회 호출 결과 (키 값은 노출 안 함)."""
+    import os
+    key = os.getenv("ANTHROPIC_API_KEY", ""); ws = os.getenv("ANTHROPIC_WORKSPACE_ID", "")
+    out = {"key_set": bool(key), "key_prefix": key[:10] if key else None, "key_len": len(key), "workspace_set": bool(ws),
+           "workspace_prefix": ws[:7] if ws else None, "model": os.getenv("CLAUDE_MODEL", "claude-opus-5")}
+    try:
+        from funeral import client, MODEL
+        r = await client.messages.create(model=MODEL, max_tokens=1500, output_config={"effort": "low"},
+                                         messages=[{"role": "user", "content": "say ok"}])
+        out["call"] = "ok"; out["reply"] = "".join(b.text for b in r.content if b.type == "text")[:40]
+    except Exception as e:  # noqa: BLE001
+        out["call"] = "error"; out["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    return out
+
+
 # ---------------------------------------------------------------- ingest
 @app.post("/upload")
 async def upload(files: list[UploadFile] = File(...)):
