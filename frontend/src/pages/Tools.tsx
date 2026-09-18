@@ -15,7 +15,7 @@ const GRID_CSS = `
 @media (max-width:700px){.tool-grid.tg-hero{grid-template-columns:1fr;}.tool-grid.tg-hero .tool.hero{min-height:0;}}
 `
 
-export function Tools({ name }: { name: string }) {
+export function Tools({ name, onCoach }: { name: string; onCoach?: () => void }) {
   const [modal, setModal] = useState<'summon' | 'legend' | 'siren' | null>(null)
   return (
     <section className="page">
@@ -26,7 +26,8 @@ export function Tools({ name }: { name: string }) {
         <div className="tool-grid tg-hero">
           <div className="tool hero reveal" style={{ ['--i' as any]: 2 }} onClick={() => setModal('summon')}><div className="tool-ic"><Icon name="ghost" size={40} /></div><div className="tool-t">X-AI 소환술</div><div className="tool-d">{name} 말투를 흉내 낸 AI랑 가상 대화 · 미련 던지면 팩폭이 돌아와</div></div>
           <div className="tool reveal" style={{ ['--i' as any]: 3 }} onClick={() => setModal('legend')}><div className="tool-ic"><Icon name="search" size={32} /></div><div className="tool-t">레전드 썰 매칭</div><div className="tool-d">내 카톡이랑 비슷한 디시·네이트판 레전드 썰로 현타 주기</div></div>
-          <div className="tool reveal" style={{ ['--i' as any]: 4 }} onClick={() => setModal('siren')}><div className="tool-ic">🚨</div><div className="tool-t">선톡 방지 비상벨</div><div className="tool-d">새벽에 선톡하고 싶을 때 누르면 사이렌이 울려</div></div>
+          {onCoach && <div className="tool reveal" style={{ ['--i' as any]: 4 }} onClick={onCoach}><div className="tool-ic"><Icon name="receipt" size={32} /></div><div className="tool-t">관계 코치 상담</div><div className="tool-d">데이터 보는 코치한테 묻기 · 사정을 말하면 진단서가 그걸 우선해</div></div>}
+          <div className="tool reveal" style={{ ['--i' as any]: 5 }} onClick={() => setModal('siren')}><div className="tool-ic">🚨</div><div className="tool-t">선톡 방지 비상벨</div><div className="tool-d">새벽에 선톡하고 싶을 때 누르면 사이렌이 울려</div></div>
         </div>
         <div className="roast reveal" style={{ ['--i' as any]: 5, marginTop: 44 }}>
           <div className="rq">"다시 만나기만 해봐라.<br />인간은 같은 실수를 반복하고,<br />당신은 또 울면서 이 앱을 켜게 될 겁니다."</div>
@@ -88,7 +89,7 @@ function Summon({ name, onClose }: { name: string; onClose: () => void }) {
         {busy && <div className="rp-msg them">…</div>}
       </div>
       <div className="summon-quick">{['보고 싶어', '우리 다시 만날까?', '그때 왜 그랬어?'].map(q => <button key={q} onClick={() => say(q)}>{q}</button>)}</div>
-      <div className="summon-in"><input value={v} onChange={e => setV(e.target.value)} placeholder="미련 섞인 톡을 던져봐…" onKeyDown={e => e.key === 'Enter' && say()} /><button onClick={() => say()} aria-label="보내기">↑</button></div>
+      <div className="summon-in"><input value={v} onChange={e => setV(e.target.value)} placeholder="미련 섞인 톡을 던져봐…" onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) say() }} /><button onClick={() => say()} aria-label="보내기">↑</button></div>
     </Modal>
   )
 }

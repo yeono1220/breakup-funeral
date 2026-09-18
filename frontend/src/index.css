@@ -271,6 +271,8 @@ input,textarea{font-family:inherit;}
 .rp-msg.them{background:var(--panel2);align-self:flex-start;color:var(--text);}
 .rp-msg.me{background:var(--rose);color:#fff;border-radius:var(--r-m) var(--r-m) var(--r-s) var(--r-m);align-self:flex-end;}
 .summon-body{display:flex;flex-direction:column;height:440px;}
+.coach-body{height:min(600px,72vh);}
+.coach-body .rp-msg.them{max-width:92%;}
 .summon-chat{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding:8px 0;}
 .summon-in{display:flex;gap:8px;margin-top:12px;}
 .summon-in input{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-pill);padding:12px 16px;font-size:14px;color:var(--text);transition:border-color var(--dur-1) var(--ease-out);}

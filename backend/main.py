@@ -40,7 +40,22 @@ def _coach() -> Coach:
     me, target = db.get_setting(con, "me"), db.get_setting(con, "target")
     if not me or not target:
         raise HTTPException(400, "먼저 /me, /target 으로 나와 상대를 설정해줘")
-    return Coach(db.all_messages(con), me, target, db.now_ts(con), _persona_of(con, target))
+
+    def on_update(patch: dict) -> dict:
+        """코치의 update_context 툴 → persona 저장. note는 기존 context 뒤에 누적, 나머지는 덮어씀."""
+        c2 = _con()
+        cur = json.loads(db.get_setting(c2, "persona", "{}") or "{}")
+        p = cur.get(target) or {}
+        note = patch.pop("note", None)
+        if note:
+            prev = (p.get("context") or "").strip()
+            p["context"] = (prev + ("\n" if prev else "") + note.strip())[-1500:]
+        p.update(patch)
+        cur[target] = p
+        db.set_setting(c2, "persona", json.dumps(cur, ensure_ascii=False))
+        return _persona_of(c2, target)
+
+    return Coach(db.all_messages(con), me, target, db.now_ts(con), _persona_of(con, target), on_update=on_update)
 
 
 @app.get("/")
@@ -284,6 +299,9 @@ async def chat(body: ChatBody):
         buf = []
         try:
             async for t in coach.chat(body.messages):
+                if isinstance(t, dict):   # 툴 이벤트 (예: context_updated → 프론트가 진단서를 다시 받는다)
+                    yield f"data: {json.dumps({'event': t}, ensure_ascii=False)}\n\n"
+                    continue
                 buf.append(t)
                 yield f"data: {json.dumps({'delta': t}, ensure_ascii=False)}\n\n"
         except Exception as e:  # noqa: BLE001 — 키 없음/네트워크 등을 프론트에 그대로 알림

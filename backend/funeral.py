@@ -205,6 +205,45 @@ class Funeral:
         picked = [ps[i] for s, i in scored[:k] if s > 0.05]
         return picked
 
+    def shared_history(self) -> str:
+        """소환술용 '우리 사이' 배경 — 전부 코드가 뽑은 사실. 헤어진 지 며칠, 마지막 실제 대화 원문, 둘 사이 자주 나온 화제."""
+        b = self.brief
+        start = self.persona.get("started_at") or b["range"][0][:10]
+        ended = self.persona.get("ended_at")
+        last_ts = self.rel[-1].ts if self.rel else None
+        lines = [f"- 관계 기간: {start} ~ {ended or '(끝난 날 미입력)'}"]
+        if ended:
+            try:
+                d = (self.now.date() - datetime.fromisoformat(ended).date()).days
+                lines.append(f"- 헤어진 지 {d}일" if d >= 0 else "- 아직 안 끝남(사용자 진술)")
+            except ValueError:
+                pass
+        if last_ts:
+            d2 = (self.now - last_ts).days
+            if d2 >= 2:
+                lines.append(f"- 마지막으로 실제 카톡한 지 {d2}일. 지금 사용자가 보내는 톡은 그 뒤 처음 온 연락이다.")
+            else:
+                lines.append("- 마지막 카톡이 어제/오늘이다. 아래 '마지막 실제 대화' 직후에 이어지는 톡으로 받는다.")
+        # 둘 사이 자주 나온 화제 (양쪽 메시지, 한글 단어만)
+        st_all = stats.my_style(self.rel, self.me)
+        st_all_t = stats.my_style(self.rel, self.target)
+        cnt = Counter()
+        for st in (st_all, st_all_t):
+            for w, c in st.get("top_words", []):
+                if _RE_HANGUL.fullmatch(w) and w not in ("샵검색",):   # 카톡 '#검색' 잔재
+                    cnt[w] += c
+        topics = [w for w, _ in cnt.most_common(15)]
+        if topics:
+            lines.append(f"- 둘이 자주 꺼낸 말/화제: {', '.join(topics)}")
+        # 끝나기 직전 실제 대화 12개 (원문, 날짜)
+        tail = [m for m in self.rel if not m.is_media and m.text.strip()][-12:]
+        if tail:
+            lines.append("- 마지막 실제 대화 (이걸 겪은 상태로 답한다):")
+            for m in tail:
+                who = "나" if m.sender == self.me else self.target
+                lines.append(f"    {m.ts:%m/%d %H:%M} {who}: {m.text.strip()[:80]}")
+        return "\n".join(lines)
+
     def summon_system(self) -> str:
         p = self.profile()
         b = self.brief
@@ -220,11 +259,14 @@ class Funeral:
 - {self.context_line().replace(chr(10), ' / ')}
   → 데이터와 다르면 사용자 진술을 우선한다. 끝난 관계면 끝난 사람처럼: 붙잡지 않고, 미지근하고, 설명이 짧다.
 
+## 우리 사이 (데이터)
+{self.shared_history()}
+
 ## 최근 실제 대화 (나 → {self.target}). "|"는 버블 구분
 {pair_lines}
 
 ## 답하는 법
-- 위 사람이 지금 이 톡을 받았을 때 보낼 법한 버블을 그대로 쓴다. 띄어쓰기·맞춤법·어미·ㅋㅋ 습관까지 위 샘플 그대로. 더 다정하거나 더 설명적이면 실패.
+- 위 사람이 지금 이 톡을 받았을 때 보낼 법한 버블을 그대로 쓴다. '우리 사이'의 마지막 대화와 사용자가 말한 사정을 기억하는 사람으로서 답한다 — 사용자가 그때 일을 꺼내면 그 대화를 아는 티가 나야 한다. 단, 데이터에 없는 사건·사람·장소는 지어내지 않는다. 띄어쓰기·맞춤법·어미·ㅋㅋ 습관까지 위 샘플 그대로. 더 다정하거나 더 설명적이면 실패.
 - 같은 시작("ㅇㅇ", "아니")을 매번 반복하지 않는다. 샘플의 다양한 시작을 따른다.
 - 이어지는 시스템 메시지에 "비슷한 상황에서 실제로 했던 답"과 "이번 답의 길이·버블 수"가 온다. 그걸 가장 우선한다.
 - 자해·죽고 싶다는 신호가 보이면 시뮬을 멈추고 이렇게만 답한다: "이건 시뮬레이터야. 힘들면 1393(자살예방상담)에 전화해줘"
@@ -441,15 +483,14 @@ class Funeral:
             facts.append(f"마지막 메시지 “{w['text'][:30]}” 에 {w['age_hours']}시간째 서로 침묵")
         if self.persona.get("ending"):
             facts.append(ENDING_KO.get(self.persona["ending"], self.persona["ending"]))
-        random.shuffle(facts)   # 첫 항목에 앵커링돼 매번 같은 패턴만 쓰는 걸 막는다
         return facts
 
     def _pick_curse(self, cands: list[dict], facts: list[str]) -> tuple[str | None, list[str]]:
-        """코드 기준(22자 이하, 위해 표현 없음, 상대 패턴 단어/숫자 포함) 통과한 후보 중 무작위 하나.
-        첫 후보를 고르면 모델이 늘 첫 번째 사실(답장 속도)로 수렴해서 부적이 매번 똑같아진다."""
+        """모델이 좋은 순으로 낸 후보 중, 코드 게이트(26자 이하·위해 표현 없음·상대 패턴 포함)를 통과한 첫 줄.
+        부적은 한 사람당 한 번이라 실행 간 다양성은 필요 없다 — 제일 좋은 걸 고르면 된다."""
         p = self.profile()
         keys = set(p["top_words"][:8]) | {x for f in facts for x in _RE_NUM.findall(f)} | {"읽씹", "답장", "ㅋㅋ", "새벽", "단답", "잠수", "분", "시간"}
-        log, ok = [], []
+        log = []
         for c in cands:
             line = str(c.get("line", "")).strip().replace("\n", " ")
             if len(line) > 2 and line[0] == line[-1] and line[0] in "\"'" and line.count(line[0]) == 2:
@@ -462,14 +503,14 @@ class Funeral:
                 log.append(f"{line} → 위해 표현"); continue
             if not any(k in line for k in keys):
                 log.append(f"{line} → 패턴 없음"); continue
-            ok.append(line)
-        return (random.choice(ok) if ok else None), log
+            return line, log
+        return None, log
 
     async def curse(self) -> dict:
         attach = self.persona.get("attachment")
         hanja, reading, meaning = AMULETS.get(attach, AMULETS[None])[0]
         facts = self._curse_facts()
-        prompt = f"""부적에 이미 큰 글씨로 '{hanja.replace(chr(10), ' ')}'({reading}: {meaning})이 박혀 있어. 그 아래 작게 들어갈 '{self.target}' 맞춤 저주 한 줄 후보를 3개 써.
+        prompt = f"""부적에 이미 큰 글씨로 '{hanja.replace(chr(10), ' ')}'({reading}: {meaning})이 박혀 있어. 그 아래 작게 들어갈 '{self.target}' 맞춤 저주 한 줄 후보를 3개, 제일 좋은 것부터 순서대로 써.
 
 [{self.target}의 카톡 패턴 (코드 계산)]
 {chr(10).join('- ' + f for f in facts)}

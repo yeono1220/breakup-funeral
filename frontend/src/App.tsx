@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Amulet, type Persona, type Relationship } from './api'
 import { ToastProvider, useToast } from './components/ui'
+import { CoachChat, type CoachMsg } from './components/CoachChat'
 import { Icon } from './components/Icons'
 import { Analyze } from './pages/Analyze'
 import { Cemetery } from './pages/Cemetery'
@@ -24,6 +25,8 @@ function Shell() {
   const [persona, setPersona] = useState<Persona>({ mbti: null, attachment: null, note: null })
   const [buriedKind, setBuriedKind] = useState<'chrys' | 'curse'>('chrys')
   const [amulet, setAmulet] = useState<Amulet | null>(null)
+  const [coachOpen, setCoachOpen] = useState(false)
+  const [coachMsgs, setCoachMsgs] = useState<CoachMsg[]>([])   // 페이지를 옮겨도 상담은 이어진다
 
   // 이전 세션 복원
   useEffect(() => {
@@ -36,6 +39,12 @@ function Shell() {
   }
   const start = (me: string, target: string) => { setJump(undefined); setPair({ me, target }); api.persona(target).then(setPersona).catch(() => {}); setPage('analyze') }
   const onDone = useCallback((r: Relationship) => { setData(r); if (pair) api.persona(pair.target).then(setPersona).catch(() => {}); setPage('diagnosis'); window.scrollTo(0, 0) }, [pair])
+  // 코치가 사정을 기록하면 진단서(향년·사인·단계)를 새 컨텍스트로 다시 받는다
+  const refresh = useCallback(() => {
+    if (!pair) return
+    api.relationship(pair.target).then(setData).catch(() => {})
+    api.persona(pair.target).then(setPersona).catch(() => {})
+  }, [pair])
   const onError = useCallback((e: string) => { toast('분석 실패: ' + e.slice(0, 80)); setPage('upload') }, [toast])
 
   const alias = persona.alias ?? persona.note === 'alias'
@@ -65,10 +74,11 @@ function Shell() {
       </div>
       {page === 'upload' && <Upload onStart={start} jumpTo={jump} />}
       {page === 'analyze' && pair && <Analyze target={pair.target} onDone={onDone} onError={onError} />}
-      {page === 'diagnosis' && data && <Diagnosis data={data} persona={persona} alias={alias} onNext={() => go('tribute')} onEditContext={() => { setJump('persona'); setPage('upload'); window.scrollTo(0, 0) }} />}
+      {page === 'diagnosis' && data && <Diagnosis data={data} persona={persona} alias={alias} onNext={() => go('tribute')} onEditContext={() => { setJump('persona'); setPage('upload'); window.scrollTo(0, 0) }} onCoach={() => setCoachOpen(true)} />}
       {page === 'tribute' && data && <Tribute data={data} name={name} portrait={persona.portrait ?? null} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} onAmulet={setAmulet} />}
       {page === 'cemetery' && <Cemetery myEpitaph={epitaph} myKind={buriedKind} myDays={days} myHanja={amulet ? amulet.hanja.replace(/\n/g, ' ') : null} />}
-      {page === 'tools' && <Tools name={name || '그 사람'} />}
+      {page === 'tools' && <Tools name={name || '그 사람'} onCoach={pair ? () => setCoachOpen(true) : undefined} />}
+      {coachOpen && <CoachChat name={name || '그 사람'} msgs={coachMsgs} setMsgs={setCoachMsgs} onContextUpdated={refresh} onClose={() => setCoachOpen(false)} />}
     </>
   )
 }

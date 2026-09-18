@@ -43,7 +43,7 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
       <div className="wrap">
         <div className="cemetery-head reveal" style={{ ['--i' as any]: 0 }}>
           <h2 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon name="tomb" size={18} />공동묘지</h2>
-          <div className="live-count"><span className="live-dot" />조문객 <span className="num">{data?.visitors ?? '…'}</span>명 · 로그인 없이 헌화·방명록</div>
+          <div className="live-count"><span className="live-dot" />{data?.visitors != null ? <>다녀간 조문객 <span className="num">{data.visitors}</span>명 · </> : null}로그인 없이 헌화·방명록</div>
         </div>
         <p className="reveal" style={{ ['--i' as any]: 1, color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>떠나보낸 관계들이 잠든 곳 · 헌화는 묘비당 한 번, 방명록은 익명</p>
         {err && <div className="ctx-banner">공동묘지 서버에 연결 못 했어 ({err.slice(0, 60)})</div>}

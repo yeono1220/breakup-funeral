@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS guestbook (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tomb_id INTEGER NOT NULL, anon TEXT NOT NULL,
     nick TEXT NOT NULL, text TEXT NOT NULL, created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS visits (
+    anon TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 1
+);
 """
 
 SEED = [
@@ -64,7 +67,11 @@ def list_tombs(con: sqlite3.Connection, anon: str | None) -> dict:
               "flowers": r["flowers"], "comments": r["comments"], "mine": bool(anon) and r["owner"] == anon,
               "flowered": r["id"] in mine_flowered, "created": r["created"]} for r in rows]
     top = sorted(tombs, key=lambda t: -t["flowers"])[:3]
-    visitors = 100 + con.execute("SELECT COUNT(*) FROM flowers").fetchone()[0] + con.execute("SELECT COUNT(*) FROM guestbook").fetchone()[0]
+    if anon:   # 실제로 다녀간 브라우저 수. 가짜 패딩 없음
+        con.execute("INSERT INTO visits(anon, first, last, n) VALUES (?,?,?,1) ON CONFLICT(anon) DO UPDATE SET last = excluded.last, n = n + 1",
+                    (anon, datetime.now().isoformat(timespec="seconds"), datetime.now().isoformat(timespec="seconds")))
+        con.commit()
+    visitors = con.execute("SELECT COUNT(*) FROM visits").fetchone()[0]
     return {"tombs": tombs, "top": top, "visitors": visitors}
 
 

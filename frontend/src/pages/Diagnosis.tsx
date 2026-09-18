@@ -16,8 +16,8 @@ export function displayName(name: string, alias: boolean) {
 const H_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 }
 const order = (n: number) => ({ ['--i' as string]: n } as CSSProperties)
 
-export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
-  data: Relationship; persona: Persona; alias: boolean; onNext: () => void; onEditContext?: () => void
+export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach }: {
+  data: Relationship; persona: Persona; alias: boolean; onNext: () => void; onEditContext?: () => void; onCoach?: () => void
 }) {
   const t = data.target
   const name = displayName(t, alias)
@@ -31,6 +31,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
   const lastDate = uc?.ended_at ? uc.ended_at + 'T00:00:00' : data.range[1]
   const [startedAt, setStartedAt] = useS<string | null>(uc?.started_at ?? null)
   const [editStart, setEditStart] = useS(false)
+  useEffect(() => { setStartedAt(uc?.started_at ?? null) }, [uc?.started_at])   // 코치 상담으로 시작일이 바뀌면 따라간다
   const startIso = startedAt ? startedAt + 'T00:00:00' : (uc?.suggested_start ? uc.suggested_start + 'T00:00:00' : data.range[0])
   const days = Math.max(1, Math.round((new Date(lastDate).getTime() - new Date(startIso).getTime()) / 86400000))
   const knownBefore = Math.round((new Date(startIso).getTime() - new Date(data.range[0]).getTime()) / 86400000)
@@ -227,6 +228,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
 
           <div className="reveal" style={order(3)}>
             <button className="btn btn-rose btn-block" style={{ fontSize: 16, padding: 16 }} onClick={onNext}>{dead ? '이제 추모하러 가기 →' : '그래도 미리 보내볼래 →'}</button>
+            {onCoach && <button className="btn btn-block" style={{ marginTop: 10 }} onClick={onCoach}>코치와 상담하기 · 사정을 말하면 진단서가 바뀌어</button>}
             <div className="tiny faint" style={{ textAlign: 'center', marginTop: 12 }}>마지막 대화 {fmtTime(lastDate)}</div>
           </div>
         </div>

@@ -92,5 +92,5 @@ export type Legend = { title: string; source: string; url: string; summary: stri
 export type Legends = { stories: Legend[]; searched?: boolean; cached?: boolean; fallback?: boolean; reason?: string; queries?: string[]; basis?: { attachment: string | null; ending: string | null } }
 
 export type Tomb = { id: number; epitaph: string; kind: 'chrys' | 'curse'; days: number | null; hanja: string | null; flowers: number; comments: number; mine: boolean; flowered: boolean; created: string }
-export type CemeteryData = { tombs: Tomb[]; top: Tomb[]; visitors: number }
+export type CemeteryData = { tombs: Tomb[]; top: Tomb[]; visitors: number | null }
 export type Comment = { id: number; nick: string; text: string; created: string }

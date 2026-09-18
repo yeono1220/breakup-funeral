@@ -17,7 +17,7 @@ export const store = {
     const [{ data: rows, error }, { data: mine }, { data: vis }] = await Promise.all([
       sb.from('tombs').select('id, epitaph, kind, days, hanja, owner, flowers, created_at, guestbook(count)').order('created_at', { ascending: false }),
       sb.rpc('my_flowers', { p_anon: anon }),
-      sb.rpc('visitors'),
+      sb.rpc('visit', { p_anon: anon }),   // 방문 기록 + 실제 조문객 수 (같은 브라우저는 1명)
     ])
     if (error) throw error
     const flowered = new Set<number>((mine as number[] | null) ?? [])
@@ -26,7 +26,7 @@ export const store = {
       comments: (r.guestbook as unknown as { count: number }[] | null)?.[0]?.count ?? 0,
       mine: r.owner === anon, flowered: flowered.has(r.id), created: r.created_at,
     }))
-    return { tombs, top: [...tombs].sort((a, b) => b.flowers - a.flowers).slice(0, 3), visitors: (vis as number | null) ?? 100 + tombs.length }
+    return { tombs, top: [...tombs].sort((a, b) => b.flowers - a.flowers).slice(0, 3), visitors: (vis as number | null) ?? null }
   },
   async bury(b: { epitaph: string; kind: 'chrys' | 'curse'; days?: number | null; hanja?: string | null }) {
     if (!sb) return api.bury(b)

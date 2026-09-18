@@ -46,10 +46,27 @@ begin
   return query select t.flowers, not inserted from public.tombs t where t.id = p_tomb;
 end $$;
 
--- 조문객 수 = 헌화 + 댓글 (+100 기본)
+-- 조문객 = 실제로 다녀간 브라우저(anon id) 수. 페이지를 열 때 visit()로 기록한다. (migrate_visits.sql과 동일)
+create table if not exists visits (
+  anon        text primary key,
+  first_seen  timestamptz not null default now(),
+  last_seen   timestamptz not null default now(),
+  n           int not null default 1
+);
+
+create or replace function visit(p_anon text)
+returns int language plpgsql security definer set search_path = public as $$
+begin
+  if char_length(p_anon) between 6 and 64 then
+    insert into public.visits(anon) values (p_anon)
+    on conflict (anon) do update set last_seen = now(), n = visits.n + 1;
+  end if;
+  return (select count(*) from public.visits)::int;
+end $$;
+
 create or replace function visitors()
 returns int language sql stable security definer set search_path = public as $$
-  select 100 + (select count(*) from public.flowers)::int + (select count(*) from public.guestbook)::int;
+  select (select count(*) from public.visits)::int;
 $$;
 
 -- 내가 이미 헌화한 묘비 목록
@@ -62,15 +79,18 @@ $$;
 alter table tombs     enable row level security;
 alter table flowers   enable row level security;
 alter table guestbook enable row level security;
+alter table visits    enable row level security;
 
 drop policy if exists tombs_read on tombs;      create policy tombs_read     on tombs     for select using (true);
 drop policy if exists tombs_insert on tombs;    create policy tombs_insert   on tombs     for insert with check (owner is not null and char_length(owner) between 6 and 64);
 drop policy if exists gb_read on guestbook;     create policy gb_read        on guestbook for select using (true);
 drop policy if exists gb_insert on guestbook;   create policy gb_insert      on guestbook for insert with check (char_length(anon) between 6 and 64);
 drop policy if exists fl_read on flowers;       create policy fl_read        on flowers   for select using (false);   -- 직접 조회 불가 (함수로만)
+drop policy if exists visits_read on visits;    create policy visits_read    on visits    for select using (false);
 
 grant execute on function flower(bigint, text) to anon, authenticated;
 grant execute on function visitors() to anon, authenticated;
+grant execute on function visit(text) to anon, authenticated;
 grant execute on function my_flowers(text) to anon, authenticated;
 
 -- 시드 (비어 있을 때만)

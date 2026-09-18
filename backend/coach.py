@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 import anthropic
 from dotenv import load_dotenv
@@ -44,6 +44,7 @@ SYSTEM_RULES = """너는 사용자의 카카오톡 데이터를 보는 '관계 �
 5. 답장 속도를 말할 땐 **항상 비교 기준을 같이**: "이 사람에겐 3분, 다른 사람들에겐 55분 (18배)".
 6. 질문에 답하기 전에 필요한 툴을 먼저 호출해. 한 번에 여러 툴을 불러도 돼. 원문이 필요하면 search_messages / get_context 로 앞뒤 맥락을 봐.
 7. 집착을 조장하는 말("계속 확인해봐", "지금 당장 보내") 금지. 자해·폭력 언급이 나오면 대화를 멈추고 도움 받을 곳을 안내해.
+8. **사용자가 상황을 말해주면 update_context로 기록해.** 언제 시작했는지/끝났는지, 누가 끝냈는지(ending), 무슨 일이 있었는지(note: 사용자 말을 한두 문장으로). 데이터는 대화의 모양만 알고 사정은 모르니까, 사용자 말이 들어오면 진단서·향년·사인이 그걸 우선해서 다시 계산된다. 기록했으면 "반영해서 다시 봤어"라고 짧게 알리고, 바뀐 해석이 있으면 말해. 추측으로 기록하지 말고, 사용자가 분명히 말한 것만. '3월 말'처럼 날짜가 모호하면 started_at/ended_at엔 넣지 말고 note에만 적은 뒤 정확한 날을 되물어.
 
 ## 말투
 - 반말, 친한 친구. 마크다운 헤더 금지, 불릿은 최대 3개, 한 답변 5문장 이내가 기본.
@@ -77,6 +78,14 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"other": {"type": "string"}}, "required": ["other"]}},
     {"name": "list_people", "description": "데이터에 있는 다른 사람들 목록(메시지 수).",
      "input_schema": {"type": "object", "properties": {}}},
+    {"name": "update_context", "description": "사용자가 대화 중 알려준 관계 사정을 기록한다. 기록 즉시 진단서·향년·사망 원인·X 소환술이 이 사정을 우선해 다시 계산된다. 사용자가 분명히 말한 항목만 넣고 나머지는 비워둬. note는 누적된다(덮어쓰지 않음).",
+     "input_schema": {"type": "object", "properties": {
+         "ending": {"type": "string", "enum": ["ghosted", "dumped", "dumper", "faded", "mutual", "ongoing"], "description": "누가 어떻게 끝냈나: ghosted=상대가 잠수, dumped=상대가 나를 참, dumper=내가 참, faded=자연소멸, mutual=합의, ongoing=안 끝남"},
+         "started_at": {"type": "string", "description": "관계(썸/연애) 시작일 YYYY-MM-DD"},
+         "ended_at": {"type": "string", "description": "끝난 날 YYYY-MM-DD"},
+         "note": {"type": "string", "description": "사용자가 말한 사정 1~2문장, 사용자 표현 그대로 가깝게 (예: '9월 초에 걔가 다른 사람 생겼다고 말함')"},
+         "mbti": {"type": "string"}, "attachment": {"type": "string", "enum": ["secure", "anxious", "avoidant", "fearful"]}},
+      "additionalProperties": False}},
 ]
 
 
@@ -101,12 +110,15 @@ def _parse_date(s: str | None) -> datetime | None:
 
 
 class Coach:
-    def __init__(self, all_msgs: list[Message], me: str, target: str, now: datetime, persona: dict | None = None):
+    def __init__(self, all_msgs: list[Message], me: str, target: str, now: datetime, persona: dict | None = None,
+                 on_update: Callable[[dict], dict] | None = None):
         self.all = all_msgs
         self.me, self.target, self.now = me, target, now
         self.rel = relationship_messages(all_msgs, me, target)
         self.others = other_messages(all_msgs, self.rel)
         self.persona = persona or {}
+        self.on_update = on_update          # update_context 툴이 호출: 저장하고 새 persona를 돌려준다
+        self.events: list[dict] = []        # 툴 실행 중 생긴 프론트 알림(컨텍스트 갱신 등), chat()이 흘려보냄
         self._brief_cache: dict | None = None
 
     # ------------------------------------------------------------ brief (매 턴 주입)
@@ -139,7 +151,7 @@ class Coach:
                 "\n\n## 관계 요약 카드 (툴 get_relationship_brief와 동일, 매 턴 최신)\n" +
                 json.dumps(b, ensure_ascii=False, default=str) +
                 "\n\n## 사용자가 알려준 이별 상황 (데이터 판정과 다르면 이걸 우선)\n" +
-                json.dumps({k: self.persona.get(k) for k in ("ending", "context", "ended_at", "mbti", "attachment")}, ensure_ascii=False) +
+                json.dumps({k: self.persona.get(k) for k in ("ending", "context", "started_at", "ended_at", "mbti", "attachment")}, ensure_ascii=False) +
                 "\n\n주의: 위 카드는 요약이야. 특정 시점·메시지·기간에 대한 질문은 반드시 get_timeline / search_messages / get_context / get_period 로 원본을 확인하고 msg_id를 인용해.")
 
     # ------------------------------------------------------------ tools
@@ -242,13 +254,25 @@ class Coach:
 
         if name == "list_people":
             return rel_mod.candidates(self.all, me)[:15]
+
+        if name == "update_context":
+            patch = {k: v for k, v in args.items() if v not in (None, "")}
+            if not patch:
+                return {"error": "기록할 항목이 없음"}
+            if self.on_update is None:
+                return {"error": "이 세션에선 기록 불가"}
+            self.persona = self.on_update(patch)
+            self.events.append({"context_updated": {k: self.persona.get(k) for k in ("ending", "context", "started_at", "ended_at", "mbti", "attachment")}})
+            return {"ok": True, "persona": {k: self.persona.get(k) for k in ("ending", "context", "started_at", "ended_at", "mbti", "attachment")},
+                    "note": "저장됨. 진단서·향년·사인은 이 사정을 우선해 다시 계산된다."}
         return {"error": f"unknown tool {name}"}
 
     # ------------------------------------------------------------ chat
-    async def chat(self, history: list[dict]) -> AsyncIterator[str]:
+    async def chat(self, history: list[dict]) -> AsyncIterator[str | dict]:
+        """텍스트 조각(str)과 프론트 이벤트(dict, 예: {"context_updated": …})를 섞어서 흘려보낸다."""
         messages = list(history)
-        system = self.system_prompt()
         for _ in range(8):
+            system = self.system_prompt()   # update_context 뒤엔 persona가 바뀌므로 매 라운드 다시 만든다
             async with client.messages.stream(model=MODEL, max_tokens=16000, output_config={"effort": "high"}, system=system, tools=TOOLS, messages=messages) as stream:
                 async for text in stream.text_stream:
                     yield text
@@ -261,10 +285,13 @@ class Coach:
                 {"type": "tool_result", "tool_use_id": t.id,
                  "content": json.dumps(self.run_tool(t.name, t.input), ensure_ascii=False, default=str)[:20000]}
                 for t in tool_uses]})
+            while self.events:
+                yield self.events.pop(0)
 
     async def first_insight(self) -> str:
         out = []
         async for t in self.chat([{"role": "user", "content":
             "방금 내 데이터 다 봤지? 인사 없이, 내가 몰랐을 법한 가장 흥미로운 사실 딱 하나만 숫자와 영수증과 함께 2~3문장으로. 마지막에 되묻기 하나."}]):
-            out.append(t)
+            if isinstance(t, str):
+                out.append(t)
         return "".join(out)
