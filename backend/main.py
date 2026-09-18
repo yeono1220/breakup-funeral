@@ -43,6 +43,12 @@ def _coach() -> Coach:
     return Coach(db.all_messages(con), me, target, db.now_ts(con), _persona_of(con, target))
 
 
+@app.get("/")
+@app.get("/health")
+async def health():
+    return {"ok": True, "service": "breakup-funeral-api"}
+
+
 # ---------------------------------------------------------------- ingest
 @app.post("/upload")
 async def upload(files: list[UploadFile] = File(...)):
