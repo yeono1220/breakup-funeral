@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Amulet, type Persona, type Relationship } from './api'
 import { ToastProvider, useToast } from './components/ui'
+import { Icon } from './components/Icons'
 import { Analyze } from './pages/Analyze'
 import { Cemetery } from './pages/Cemetery'
 import { Diagnosis, displayName } from './pages/Diagnosis'
@@ -55,7 +56,7 @@ function Shell() {
   return (
     <>
       <div className="topbar">
-        <div className="brand" onClick={() => go('upload')}><span className="logo">🪦 이별 장례식</span><span className="tag">AI 관계 추모 센터</span></div>
+        <div className="brand" onClick={() => go('upload')}><span className="logo"><Icon name="tomb" size={18} /> 이별 장례식</span><span className="tag">AI 관계 추모 센터</span></div>
         <div className="nav">
           <a className={navOn === 'funeral' ? 'on' : ''} onClick={() => go(data ? 'diagnosis' : 'upload')}>내 장례식</a>
           <a className={navOn === 'cemetery' ? 'on' : ''} onClick={() => go('cemetery')}>공동묘지</a>

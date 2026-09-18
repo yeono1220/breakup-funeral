@@ -53,7 +53,7 @@ export function BurnRitual({ amulet, loading, onClose }: { amulet: Amulet | null
             <div className="am-line">“{amulet.line}”</div>
             <div className={'am-seal' + (phase === 'stamp' || phase === 'done' ? ' hit' : '')}>封</div>
           </div>
-          {phase === 'done' && <div className="burn-hint">아무 데나 눌러 닫기 · 저주는 이미 발송됐어요 📜</div>}
+          {phase === 'done' && <div className="burn-hint">아무 데나 눌러 닫기 · 저주는 이미 발송됐어</div>}
         </div>
       )}
     </div>

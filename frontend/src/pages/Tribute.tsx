@@ -3,9 +3,13 @@ import { api, type Amulet, type Relationship } from '../api'
 import { Portrait } from '../components/Portrait'
 import { BurnRitual } from '../components/BurnRitual'
 import { GrassField } from '../components/GrassField'
+import { Icon } from '../components/Icons'
 import { Modal, useToast, fmtMin } from '../components/ui'
 
 const CURSES = ['읽씹하던 그 손가락,\n앞으로 오타만 나거라', '너의 모든 소개팅에\n어색한 침묵이 깃들기를', '새 연애 3일 만에\n전 애인 얘기 튀어나와라', '너의 인스타 스토리\n조회수 평생 한 자리수', "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
+
+/* 추모 카드 2장: 국화 쪽을 살짝 넓게. 모바일은 1열 (index.css .tribute-grid 의 미디어쿼리와 동일 분기점) */
+const TRIBUTE_GRID_CSS = '.tribute-grid.tg-asym{grid-template-columns:1.2fr .8fr}@media (max-width:560px){.tribute-grid.tg-asym{grid-template-columns:1fr}}'
 
 export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmulet }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void; onAmulet?: (a: Amulet) => void }) {
   const toast = useToast()
@@ -23,7 +27,7 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
     setClosed(true); setDragging(false); setLidTop(58)
     setTimeout(() => setSoil(true), 400)
     setTimeout(() => setShowFlowers(true), 1100)
-    toast('관을 덮었어요 🪦')
+    toast('관을 덮었어')
   }, [toast])
 
   const onDown = (e: React.PointerEvent) => { if (closed) return; setDragging(true); startY.current = e.clientY; (e.target as Element).setPointerCapture?.(e.pointerId) }
@@ -38,38 +42,54 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
   function throwFlower(emoji: string) {
     setFlying(null); requestAnimationFrame(() => setFlying(emoji))
     setTimeout(() => { setThrown(x => [...x, emoji]); setFlying(null) }, 900)
-    toast('헌화했어요 💐')
+    toast('헌화했어')
   }
 
-  const title = !closed ? '잘 보내드릴게요' : thrown.length ? '편히 잠들기를' : '이제 꽃을 놓아주세요'
-  const desc = !closed ? '관 뚜껑을 잡고 아래로 덮어주세요' : thrown.length ? '꽃을 더 놓거나, 아래에서 인사를 남겨요' : '골라서 던지면 무덤 위에 놓여요'
+  const title = !closed ? '잘 보내줄게' : thrown.length ? '편히 잠들기를' : '이제 꽃을 놓아줘'
+  const desc = !closed ? '관 뚜껑을 잡고 아래로 덮어줘' : thrown.length ? '꽃을 더 놓거나, 아래에서 인사를 남겨' : '골라서 던지면 무덤 위에 놓여'
 
   return (
     <section className="page">
+      <style>{TRIBUTE_GRID_CSS}</style>
       <div className="wrap wrap-narrow">
-        <div className="steps-bar">
+        <div className="steps-bar reveal" style={{ ['--i' as any]: 0 }}>
           <span className="step-pill">① 사망 진단서</span><span className="step-arrow">→</span>
           <span className="step-pill on">② 추모하기</span><span className="step-arrow">→</span>
           <span className="step-pill">③ 공동묘지 안치</span>
         </div>
-        <h2 className="pen" style={{ fontSize: 34, textAlign: 'center', marginBottom: 6, fontWeight: 400 }}>{title}</h2>
-        <p style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>{desc}</p>
+        <h2 className="page-title reveal" style={{ textAlign: 'center', marginBottom: 8, ['--i' as any]: 1 }}>{title}</h2>
+        <p className="reveal" style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, marginBottom: 20, ['--i' as any]: 2 }}>{desc}</p>
 
-        <div className="grave-scene">
+        <div className="grave-scene reveal" style={{ ['--i' as any]: 3 }}>
           <GrassField />
           <div className="pit">
             <div className="pit-wall" />
             <div className="pit-portrait"><Portrait src={portrait} size={96} gray /></div>
-            <div className={'coffin-lid' + (dragging ? ' dragging' : '') + (closed ? ' closed' : '')} style={{ top: lidTop }}
+            <div className={'coffin-lid' + (dragging ? ' dragging' : '') + (closed ? ' closed' : '')} style={{ transform: 'translateY(' + (lidTop + 58) + 'px)' }}
               onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-              <svg width="240" height="70" viewBox="0 0 240 70"><path d="M16 8 L224 8 L232 34 L224 62 L16 62 L8 34 Z" fill="#B98A5E" stroke="#7A5B3A" strokeWidth="3" strokeLinejoin="round" /><path d="M120 14 L120 56 M60 34 L180 34" stroke="#7A5B3A" strokeWidth="2.5" /><path d="M104 26 L136 26 L128 42 L112 42 Z" fill="#8A6642" stroke="#7A5B3A" strokeWidth="2" /></svg>
-              {!closed && <div className="lid-hint">⬇ 잡고 아래로 덮기</div>}
+              <svg width="240" height="70" viewBox="0 0 240 70">
+                {/* 뚜껑 판: 좌우 비대칭, 살짝 휜 변 */}
+                <path d="M17 9 L223 7.5 Q233 34 224.5 62.5 L15.5 61.5 Q7 33 17 9 Z" fill="#B98A5E" stroke="#7A5B3A" strokeWidth="3" strokeLinejoin="round" />
+                <path d="M17 9 L223 7.5 Q233 34 224.5 62.5 L15.5 61.5 Q7 33 17 9 Z" fill="none" stroke="#7A5B3A" strokeWidth="1.2" opacity=".5" transform="translate(1.2 1)" />
+                {/* 십자 홈: 두 겹 선(굵은 반투명 + 얇은 진한) */}
+                <path d="M120 14.5 Q121 35 119.5 55.5 M61 34.5 Q120 33 179 35" stroke="#7A5B3A" strokeWidth="4" opacity=".25" fill="none" strokeLinecap="round" />
+                <path d="M120 14.5 Q121 35 119.5 55.5 M61 34.5 Q120 33 179 35" stroke="#7A5B3A" strokeWidth="2" fill="none" strokeLinecap="round" />
+                <path d="M104.5 26 L136 25.5 L128.5 42.5 L112 42 Z" fill="#8A6642" stroke="#7A5B3A" strokeWidth="2" strokeLinejoin="round" />
+              </svg>
+              {!closed && <div className="lid-hint">↓ 잡고 아래로 덮기</div>}
             </div>
-            <div className="soil-cover" style={{ height: soil ? '100%' : 0 }} />
+            <div className={'soil-cover' + (soil ? ' on' : '')} />
           </div>
           {thrown.length > 0 && (
             <div className="mound-final">
-              <svg width="260" height="130" viewBox="0 0 260 130"><path d="M20 120 Q80 40 130 42 Q180 40 240 120 Z" fill="#6B8F4E" stroke="#54733C" strokeWidth="3" strokeLinejoin="round" /><path d="M60 96 q6 -9 12 0 M108 78 q6 -9 12 0 M156 92 q6 -9 12 0 M196 104 q6 -9 12 0" stroke="#54733C" strokeWidth="2.5" fill="none" strokeLinecap="round" /><rect x="118" y="20" width="24" height="46" rx="4" fill="#AEB9C4" stroke="#7C8894" strokeWidth="3" /><path d="M118 34 L142 34" stroke="#7C8894" strokeWidth="2.5" /><text x="130" y="30" fontSize="10" textAnchor="middle" fill="#7C8894">RIP</text></svg>
+              <svg width="260" height="130" viewBox="0 0 260 130">
+                {/* 봉분: 정상이 살짝 왼쪽으로 치우친 비대칭 곡선 */}
+                <path d="M18 121 Q72 38 126 43 Q184 42 242 120 Z" fill="#6B8F4E" stroke="#54733C" strokeWidth="3" strokeLinejoin="round" />
+                <path d="M58 97 q6 -9 13 -1 M107 79 q5 -8 12 -1 M158 92 q7 -10 12 -1 M197 105 q5 -8 11 0" stroke="#54733C" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                <path d="M118 22 Q130 17 142.5 21.5 L142 66.5 L118.5 66 Z" fill="#AEB9C4" stroke="#7C8894" strokeWidth="3" strokeLinejoin="round" />
+                <path d="M119 34.5 Q130 33.5 141.5 34.5" stroke="#7C8894" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                <text x="130" y="30" fontSize="10" textAnchor="middle" fill="#7C8894">RIP</text>
+              </svg>
               <div className="thrown-flowers">{thrown.map((f, i) => <span key={i}>{f}</span>)}</div>
             </div>
           )}
@@ -78,7 +98,7 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
 
         {showFlowers && (
           <div className="flower-bar">
-            <div className="fb-label">🌸 헌화할 꽃을 골라 던져주세요</div>
+            <div className="fb-label">꽃을 골라 던져줘</div>
             <div className="flower-choices">
               {[['🌼', '국화'], ['🌹', '장미'], ['🥀', '시든 꽃'], ['💐', '꽃다발']].map(([e, l]) => (
                 <button key={e} className="flower-choice" onClick={() => throwFlower(e)}>{e}<span>{l}</span></button>
@@ -89,21 +109,21 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
 
         {thrown.length > 0 && (
           <div>
-            <div className="bury-done">🕊️ 편히 잠들었습니다 · 헌화해주셔서 고마워요</div>
-            <p style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, margin: '20px 0 16px' }}>마지막으로, 어떤 인사를 남길까요?</p>
-            <div className="tribute-grid">
-              <div className="tribute chrys" onClick={() => { setModal('flower'); onBuried('chrys') }}>
-                <div className="ti">🌼</div><div className="tt">진정성 진단서</div><div className="tp">차분한 추모</div>
-                <div className="td">데이터 근거로 쓴<br />팩폭 위로 진단서를 받아요</div>
-                <div className="price">무료</div>
+            <div className="bury-done reveal" style={{ ['--i' as any]: 0 }}>편히 잠들었어. 꽃 고마워</div>
+            <p className="reveal" style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, margin: '20px 0 16px', ['--i' as any]: 1 }}>마지막으로 어떤 인사를 남길까</p>
+            <div className="tribute-grid tg-asym">
+              <div className="tribute chrys reveal" style={{ ['--i' as any]: 2 }} onClick={() => { setModal('flower'); onBuried('chrys') }}>
+                <div className="ti" style={{ color: 'var(--chrys)' }}><Icon name="flower" size={24} /></div><div className="tt">진정성 진단서</div><div className="tp">차분한 추모</div>
+                <div className="td">데이터 근거로 쓴<br />팩폭 위로 진단서를 받아</div>
+                <div className="tiny faint" style={{ marginTop: 12 }}>무료</div>
               </div>
-              <div className="tribute curse" onClick={() => { setModal('curse'); onBuried('curse') }}>
-                <div className="ti">📜</div><div className="tt">매운맛 저주 부적</div><div className="tp">화끈한 작별</div>
-                <div className="td">🔮 애착유형별 사자성어 부적<br />+ 카톡 패턴 맞춤 저주 한 줄</div>
-                <div className="price">🔥 유료 · 크레딧</div>
+              <div className="tribute curse reveal" style={{ ['--i' as any]: 3 }} onClick={() => { setModal('curse'); onBuried('curse') }}>
+                <div className="ti" style={{ color: 'var(--rose-deep)' }}><Icon name="scroll" size={24} /></div><div className="tt">매운맛 저주 부적</div><div className="tp">화끈한 작별</div>
+                <div className="td">애착유형별 사자성어 부적<br />+ 카톡 패턴 맞춤 저주 한 줄</div>
+                <div className="tiny faint" style={{ marginTop: 12 }}>유료 · 크레딧</div>
               </div>
             </div>
-            <div className="next-row">
+            <div className="next-row reveal" style={{ ['--i' as any]: 4 }}>
               <button className="btn" style={{ flex: 1 }} onClick={onBack}>← 진단서로</button>
               <button className="btn btn-rose" style={{ flex: 1 }} onClick={onNext}>공동묘지에 안치 →</button>
             </div>
@@ -138,14 +158,14 @@ function FlowerModal({ data, name, onClose }: { data: Relationship; name: string
     try { const r = await api.eulogy(); setText(r.text) } catch { setText(templateEulogy(data, name)) } finally { setBusy(false) }
   }
   return (
-    <Modal title="🌼 국화꽃 헌화" onClose={onClose}>
-      <p className="tiny muted" style={{ marginBottom: 6 }}>헌화할 꽃을 골라요 · 잔잔한 추모 BGM ♪</p>
-      <div className="flower-pick">{['🌼', '🌸', '🥀'].map(f => <div key={f} className="flower-opt" onClick={pick}>{f}</div>)}</div>
+    <Modal title="국화꽃 헌화" onClose={onClose}>
+      <p className="tiny muted" style={{ marginBottom: 8 }}>꽃 하나 골라줘. 진단서를 써줄게</p>
+      <div className="flower-pick">{['🌼', '🌸', '🥀'].map(f => <div key={f} className="flower-opt press" onClick={pick}>{f}</div>)}</div>
       {busy && <div className="muted tiny">진단서 쓰는 중…</div>}
       {text && (
-        <div className="result-card card" style={{ borderColor: 'var(--chrys-deep)' }}>
-          <div className="chrys-flower">🌼</div>
-          <div className="diagnosis"><div className="dh">🌼 진정성 있는 팩폭 진단</div>{text}</div>
+        <div className="result-card card reveal" style={{ borderColor: 'var(--chrys-deep)' }}>
+          <div style={{ color: 'var(--chrys)', display: 'flex', justifyContent: 'center' }}><Icon name="flower" size={40} /></div>
+          <div className="diagnosis"><div className="dh">진정성 있는 팩폭 진단</div>{text}</div>
         </div>
       )}
     </Modal>
@@ -166,12 +186,12 @@ function CurseModal({ onClose, onAmulet }: { onClose: () => void; onAmulet?: (a:
   }
   return (
     <>
-      <Modal title="📜 매운맛 저주 부적" onClose={onClose}>
-        <p className="tiny muted" style={{ marginBottom: 12 }}>🔮 애착유형별 사자성어가 부적에 박히고, 상대 카톡 패턴으로 맞춤 저주 한 줄을 덧붙여요 · 🔊 소리 나요</p>
-        <button className="btn btn-rose btn-block" onClick={burn} disabled={busy}>{busy ? '부적 태우는 중…' : shown ? '🔥 한 번 더 태우기' : '🔥 저주 부적 태우기'}</button>
+      <Modal title="매운맛 저주 부적" onClose={onClose}>
+        <p className="tiny muted" style={{ marginBottom: 12 }}>애착유형에 맞는 사자성어를 부적에 새기고, 상대 카톡 패턴으로 맞춤 저주 한 줄을 덧붙여. 소리 나니까 볼륨 조심</p>
+        <button className="btn btn-rose btn-block" onClick={burn} disabled={busy}>{busy ? '부적 태우는 중…' : shown ? '한 번 더 태우기' : '저주 부적 태우기'}</button>
         {am && shown && (
           <div style={{ marginTop: 8 }}>
-            <div className="amulet">
+            <div className="amulet" style={{ animation: 'pop var(--dur-3) var(--ease-spring) both' }}>
               <div className="am-head">{am.attachment_label} · X 저주 부적</div>
               <div className="am-hanja">{am.hanja.split('\n').map((col, i) => <span key={i}>{col}</span>)}</div>
               <div className="am-read">{am.reading}</div>
@@ -179,8 +199,8 @@ function CurseModal({ onClose, onAmulet }: { onClose: () => void; onAmulet?: (a:
               <div className="am-line">“{am.line}”</div>
               <div className="am-seal">封</div>
             </div>
-            {am.fallback && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>맞춤 한 줄은 데모 문구 (API 키 확인)</div>}
-            <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => toast('저주 부적 PNG 저장은 곧 지원 📜')}>🖼️ 부적 PNG로 저장·공유</button>
+            {am.fallback && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>맞춤 한 줄은 지금 예시로 넣었어</div>}
+            <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => toast('부적 PNG 저장은 곧 돼')}>부적 PNG로 저장·공유</button>
           </div>
         )}
       </Modal>
