@@ -41,15 +41,15 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
             <div className="legend-top">
               <div className="lt-h">🏆 전설의 묘지 TOP 3</div>
               {data.top.map((t, i) => (
-                <div className="legend-row" key={t.id}><div className={'legend-rank r' + (i + 1)}>{i + 1}</div><div className="legend-body"><div className="lb-t">{t.epitaph}</div><div className="lb-m">묘비 #{t.id} · {t.kind === 'curse' ? `📜 저주봉인${t.hanja ? ` · ${t.hanja}` : ''}` : '🌼 헌화'}{t.days ? ` · 향년 ${t.days}일` : ''}</div></div><div className="legend-stat">💐 {t.flowers.toLocaleString()}</div></div>
+                <div className="legend-row" key={t.id}><div className={'legend-rank r' + (i + 1)}>{i + 1}</div><div className="legend-body"><div className="lb-t">{t.epitaph}</div><div className="lb-m">묘비 #{t.id} · {t.kind === 'curse' ? '📜 저주봉인' : '🌼 헌화'}{t.hanja && <span className="legend-amulet">符 {t.hanja}</span>}{t.days ? ` · 향년 ${t.days}일` : ''}</div></div><div className="legend-stat">💐 {t.flowers.toLocaleString()}</div></div>
               ))}
             </div>
             <div className="tomb-grid">
               {data.tombs.map(t => (
-                <div className={'tomb' + (t.mine ? ' mine' : '')} key={t.id}>
-                  <div className="tomb-top"><span className="tomb-icon">🪦</span><span className="tomb-id">묘비 #{t.id}{t.mine ? ' · 내 관계' : ''}{t.days ? ` · 향년 ${t.days}일` : ''}</span><span className={'tomb-badge ' + t.kind}>{t.kind === 'curse' ? '📜 저주봉인' : '🌼 헌화'}</span></div>
+                <div className={'tomb' + (t.mine ? ' mine' : '') + (t.hanja ? ' has-amulet' : '')} key={t.id}>
+                  {t.hanja && <MiniAmulet hanja={t.hanja} />}
+                  <div className="tomb-top"><span className="tomb-icon">🪦</span><span className="tomb-id">묘비 #{t.id}{t.mine ? ' · 내 관계' : ''}{t.days ? ` · 향년 ${t.days}일` : ''}</span>{!t.hanja && <span className={'tomb-badge ' + t.kind}>{t.kind === 'curse' ? '📜 저주봉인' : '🌼 헌화'}</span>}</div>
                   <div className="tomb-epitaph">{t.epitaph}</div>
-                  {t.hanja && <div className="tiny" style={{ color: '#E8CE9E', marginTop: -6, marginBottom: 8 }}>符 {t.hanja}</div>}
                   <div className="tomb-meta"><span className={t.flowered ? 'hit' : ''} onClick={() => hwa(t)}>💐 <b>{t.flowers.toLocaleString()}</b></span><span onClick={() => setGuest(t)}>💬 {t.comments}</span></div>
                 </div>
               ))}
@@ -83,5 +83,16 @@ function GuestModal({ tomb, onClose }: { tomb: Tomb; onClose: () => void }) {
       {items.map(c => <div className="guestbook" key={c.id}><div className="gb-name">{c.nick}</div><div className="gb-text">{c.text}</div></div>)}
       <div className="summon-in" style={{ marginTop: 12 }}><input value={v} onChange={e => setV(e.target.value)} placeholder="위로 한마디 남기기… (익명)" onKeyDown={e => e.key === 'Enter' && add()} /><button onClick={add} disabled={busy}>↑</button></div>
     </Modal>
+  )
+}
+
+/** 묘비 카드 모서리에 꽂힌 미니 부적. 공백/줄바꿈으로 나뉜 구절은 세로 열로. */
+function MiniAmulet({ hanja }: { hanja: string }) {
+  const cols = hanja.split(/\s+/).filter(Boolean).slice(0, 2)
+  return (
+    <div className={"tomb-amulet" + (hanja.replace(/\s/g, "").length > 4 ? " long" : "")} title={hanja}>
+      <div className="ta-hanja">{cols.map((c, i) => <span key={i}>{c}</span>)}</div>
+      <div className="ta-seal">封</div>
+    </div>
   )
 }

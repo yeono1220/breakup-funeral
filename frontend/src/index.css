@@ -343,3 +343,16 @@ input.date{background:var(--panel2);border:1.5px solid var(--line2);border-radiu
 .burn .amulet.big .am-seal{width:52px;height:52px;font-size:26px;opacity:0;}
 .burn .amulet.big .am-seal.hit{animation:sealHit .35s cubic-bezier(.2,.9,.2,1.2) both;border-width:3px;}
 .burn-hint{margin-top:18px;font-size:13px;color:#FFD5C8;opacity:.85;animation:fade .6s both;}
+
+/* ===== 묘비에 붙은 미니 부적 ===== */
+.tomb{position:relative;}
+.tomb.has-amulet{padding-right:78px;}
+.tomb-amulet{position:absolute;top:-8px;right:12px;width:46px;background:linear-gradient(180deg,#F6DE8C,#EFC95C);border:2px solid #B23A2E;border-radius:3px;padding:8px 4px 6px;box-shadow:0 6px 14px rgba(0,0,0,.45), inset 0 0 0 2px #F6DE8C, inset 0 0 0 3px #B23A2E;transform:rotate(6deg);transform-origin:top center;text-align:center;}
+.tomb-amulet::before{content:'';position:absolute;top:-7px;left:50%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,#B23A2E 55%,#7A1F16);box-shadow:0 2px 3px rgba(0,0,0,.5);}
+.tomb-amulet .ta-hanja{font-family:'Nanum Pen Script','Gowun Dodum',serif;writing-mode:vertical-rl;text-orientation:upright;font-size:19px;line-height:1;color:#B23A2E;margin:0 auto;display:flex;justify-content:center;gap:2px;min-height:78px;}
+.tomb-amulet .ta-hanja span{display:block;letter-spacing:1px;}
+.tomb-amulet .ta-seal{margin-top:5px;font-size:10px;color:#B23A2E;border:1.5px solid #B23A2E;border-radius:3px;width:16px;height:16px;line-height:14px;display:inline-block;transform:rotate(-8deg);font-family:'Nanum Pen Script';}
+.tomb-amulet:hover{transform:rotate(0deg) scale(1.08);transition:.2s;}
+.legend-amulet{display:inline-flex;align-items:center;gap:4px;background:linear-gradient(180deg,#F6DE8C,#EFC95C);border:1.5px solid #B23A2E;color:#B23A2E;border-radius:3px;padding:1px 6px;font-size:11px;font-family:'Nanum Pen Script';font-size:14px;margin-left:4px;vertical-align:middle;}
+.tomb-amulet.long .ta-hanja{font-size:14px;min-height:70px;gap:1px;}
+.tomb-amulet.long{width:40px;padding:7px 3px 5px;}
