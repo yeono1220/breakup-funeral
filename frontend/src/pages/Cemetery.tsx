@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api, type CemeteryData, type Comment, type Tomb } from '../api'
+import type { CemeteryData, Comment, Tomb } from '../api'
+import { store, usingSupabase } from '../cemeteryStore'
 import { Modal, useToast } from '../components/ui'
 
 export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: string | null; myKind: 'curse' | 'chrys'; myDays: number | null; myHanja: string | null }) {
@@ -7,13 +8,13 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
   const [data, setData] = useState<CemeteryData | null>(null)
   const [guest, setGuest] = useState<Tomb | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const load = () => api.cemetery().then(setData).catch(e => setErr(String(e)))
+  const load = () => store.list().then(setData).catch(e => setErr(String(e)))
   useEffect(() => { load() }, [])
 
   async function hwa(t: Tomb) {
     if (t.flowered) { toast('이미 헌화했어요 🤍'); return }
     try {
-      const r = await api.flower(t.id)
+      const r = await store.flower(t.id)
       setData(d => d && { ...d, tombs: d.tombs.map(x => x.id === t.id ? { ...x, flowers: r.flowers, flowered: true } : x), top: d.top.map(x => x.id === t.id ? { ...x, flowers: r.flowers } : x) })
       toast(r.already ? '이미 헌화했어요 🤍' : '헌화했어요 💐')
     } catch { toast('헌화 실패') }
@@ -21,7 +22,7 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
   async function bury() {
     if (!myEpitaph) { toast('먼저 진단서를 발급받아요'); return }
     try {
-      const r = await api.bury({ epitaph: myEpitaph, kind: myKind, days: myDays, hanja: myKind === 'curse' ? myHanja : null })
+      const r = await store.bury({ epitaph: myEpitaph, kind: myKind, days: myDays, hanja: myKind === 'curse' ? myHanja : null })
       toast(r.existed ? '이미 안치돼 있어요 🪦' : '내 관계도 안치됐어요 🪦'); load()
     } catch { toast('안치 실패') }
   }
@@ -56,7 +57,7 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
           </>
         )}
         <button className="btn btn-block" style={{ marginTop: 18 }} onClick={bury}>＋ 내 관계 여기 안치하기</button>
-        <div className="tiny faint" style={{ marginTop: 8, textAlign: 'center' }}>지금은 이 컴퓨터의 서버에 저장돼요. 배포하면 모두가 같은 묘지를 봐요.</div>
+        <div className="tiny faint" style={{ marginTop: 8, textAlign: 'center' }}>{usingSupabase ? '공용 묘지 (Supabase) — 누구나 로그인 없이 헌화·방명록' : '지금은 이 컴퓨터의 서버에 저장돼요. Supabase를 연결하면 모두가 같은 묘지를 봐요.'}</div>
       </div>
       {guest && <GuestModal tomb={guest} onClose={() => { setGuest(null); load() }} />}
     </section>
@@ -68,11 +69,11 @@ function GuestModal({ tomb, onClose }: { tomb: Tomb; onClose: () => void }) {
   const [items, setItems] = useState<Comment[]>([])
   const [v, setV] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { api.comments(tomb.id).then(r => setItems(r.comments)).catch(() => {}) }, [tomb.id])
+  useEffect(() => { store.comments(tomb.id).then(r => setItems(r.comments)).catch(() => {}) }, [tomb.id])
   const add = async () => {
     if (!v.trim() || busy) return
     setBusy(true)
-    try { const r = await api.addComment(tomb.id, v); setItems([{ id: Date.now(), nick: r.nick + ' (나)', text: r.text, created: '' }, ...items]); setV(''); toast('위로를 남겼어요 🤍') }
+    try { const r = await store.addComment(tomb.id, v); setItems([{ id: Date.now(), nick: r.nick + ' (나)', text: r.text, created: '' }, ...items]); setV(''); toast('위로를 남겼어요 🤍') }
     catch { toast('등록 실패') } finally { setBusy(false) }
   }
   return (
