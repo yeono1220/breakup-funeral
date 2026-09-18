@@ -67,10 +67,10 @@ render.yaml, frontend/vercel.json, run.bat, README.md
 ## 5. 프롬프트 위치 (고도화 대상)
 | 기능 | 파일 | 현재 방식 |
 |---|---|---|
-| X 소환술 | `funeral.py: summon_system()` | 상대 말투 통계 + 최근 실제 메시지 25개 + "내 말→상대 반응" 페어 15개, 규칙 5개, 후처리 `_clean_reply`(마지막 한 줄만, 메타 단어 필터). effort medium |
-| 진정성 진단서 | `funeral.py: eulogy()` | `_facts()`(코드 계산 사실 목록) + 이별 컨텍스트 + 규칙(5~6문장, 숫자 2개 이상, 마음 단정 금지, 놓아주기로 끝). 폴백 `template_eulogy` |
-| 저주 부적 | `funeral.py: curse()` + `AMULETS` | 애착유형→사자성어 고정(밈 1순위) + LLM 한 줄(20자, 패턴 하나 필수, 예시 1개) |
-| 레전드 썰 | `funeral.py: legends_for()` | web_search_20260209 (allowed_domains 커뮤니티 14개, KR), JSON 강제, pause_turn 이어받기, 사용된 쿼리 수집·표시, 상대별 캐시(`settings legends:<target>`) |
+| X 소환술 | `funeral.py: summon_system()` / `_turn_spec()` / `style_check()` | (97fd14a) 구조화 출력 JSON `{bubbles[]}` · 프로필은 코드 계산(`profile()`: 길이 분위수·버블 수·존댓말/ㅋㅋ/느낌표/이모지 비율·자주 쓰는 시작 표현) · 최근 페어 14개(캐시되는 system) + **유사 상황 검색** 페어 6개와 이번 답 스펙(버블 수·길이 샘플링)을 mid-conversation `role:system`으로 주입 · 출력은 `style_check`로 검증, 불일치 시 1회 재생성 · 프론트는 버블을 순차 표시. effort medium |
+| 진정성 진단서 | `funeral.py: eulogy()` / `_facts()` / `eulogy_check()` | 사실은 `[F1]…` 번호로, 사용자 시작일 이후만 · 뼈대(관찰 2→인정 2→놓아주기 1~2, 250~350자) + 금지 표현 · 검증(길이/숫자 2개 이상 인용/숫자 5개 이하/놓아주기 종결/이모지 1개) 실패 시 1회 재생성. 폴백 `template_eulogy` |
+| 저주 부적 | `funeral.py: curse()` / `_pick_curse()` | 후보 3개(JSON) → 코드가 26자 이하·위해 표현 없음·실제 패턴 포함인 것 중 무작위 선택. 사실 순서 셔플(답장 속도 앵커링 방지). top_words는 한글만 |
+| 레전드 썰 | `funeral.py: _legend_queries()` → `legends_for()` | 1단계: 검색어 3개 구조화 출력(effort low) → 2단계: 그 검색어로 web_search(allowed_domains 14개), match_points는 데이터 항목 인용. `planned`/`queries` 둘 다 반환 |
 | 관계 코치 | `coach.py` | SYSTEM_RULES 7개 + 렌즈 톤 + 툴 11개 + 관계 요약 카드 + 이별 컨텍스트 주입. **프론트 UI 없음(장례식 개편 때 제거됨)**, `/chat` SSE는 살아 있음 |
 | 답장 초안(F9.1) | — | **미구현** (`/draft_reply` 501). SPEC의 "말투 재현 규격" 참고 |
 
@@ -89,7 +89,7 @@ render.yaml, frontend/vercel.json, run.bat, README.md
 - uvicorn `--reload` 금지(고아 프로세스가 8000 점유 → PowerShell로 python 프로세스 kill).
 - Vite는 루트 `.env` 읽음(envDir '..'); env 바꾸면 dev 서버 재시작.
 - Claude 브라우저 패널은 GitHub 로그인 팝업이 열려 있으면 이동 불가(사용자가 닫아야 함).
-- 사용자 실데이터: `backend/data/uploads/`(gitignore). 내용은 열어보지 말고 수치만.
+- 사용자 실데이터: `backend/data/uploads/`(gitignore). 내용은 열어보지 말고 수치만. 로컬 DB의 `me`/`target` 설정은 테스트 잔재일 수 있으니(다른 이름이 들어있음) 평가 하네스엔 `--me/--target`을 명시. 실명은 문서·커밋에 쓰지 말 것.
 
 ## 8. 냉정한 평가 — 부족한 것
 - **깊이보다 폭**: 기능 8개 중 진짜 완성도는 부검·부적·공동묘지 3개. 나머지는 "돌아가는 목업"에 가깝다(레전드 폴백 문구, PNG 저장 없음, 소환술 대화가 한 줄 답만).
@@ -100,10 +100,7 @@ render.yaml, frontend/vercel.json, run.bat, README.md
 - **엔지니어링 부채**: main.py 350줄에 라우트 전부, 문자열 패치 누적으로 코드 결이 고르지 않음, CSS 단일 파일, 모바일/접근성 미검증.
 
 ## 9. 프롬프트 고도화 백로그 (다음 세션 제안 순서)
-1. **평가셋 먼저**: 사용자 본인 데이터로 소환술 20턴·진단서 5개·부적 10개를 뽑아 `docs/evals/`에 저장하고 좋/나쁨 라벨. 이게 없으면 나머지는 감.
-2. 소환술: (a) 유사 상황 검색 기반 few-shot(지금은 최근 25개 고정 → 사용자 입력과 비슷한 과거 내 메시지 뒤의 상대 답을 골라 넣기), (b) 길이·ㅋㅋ·마침표 분포에서 **샘플링**해 답 길이를 지정, (c) 출력 후 스타일 검증(길이/ㅋㅋ/존댓말) 불일치 시 1회 재생성, (d) 여러 버블로 쪼개기.
-3. 진정성 진단서: 구조 템플릿(관찰→인정→놓아주기) + 인용 사실 3개 강제 + 금지어 목록 + 길이 상한. 폴백 템플릿과 A/B.
-4. 부적 한 줄: 예시 5개 이상 + "유치함 점수" 자기검열 + 상대 top_words에서 반드시 1개 사용.
-5. 레전드 썰: 쿼리 생성 단계와 검색 단계 분리(쿼리 3개를 먼저 JSON으로 → 각각 검색), 유사도 근거를 데이터 필드명으로 명시.
+1. **평가셋 먼저**: 하네스는 있음 — `PYTHONIOENCODING=utf-8 python tests/prompt_eval.py --me <이 방에서의 내 카톡 이름> --target <상대> --tag <이름>` → `backend/data/evals/<tag>_<시각>.md` (gitignore). before/after1~4 파일이 이미 있음. **아직 없는 것: 사용자의 좋/나쁨 라벨.** 라벨 없이는 지금 변경이 '검증 통과율'만 올린 건지 '진짜 그 사람 같은지'는 모른다. 블라인드 테스트(실제 답 vs 생성 답 섞어서 사용자가 못 고르면 성공)가 다음 단계.
+2~5. **완료(97fd14a)** — 소환술/진단서/부적/레전드 위 표 참조. 남은 것: 소환술 단발 입력에서 "갑자기 왜" 같은 모델 고유 관용구가 여전히 나옴(대화 내 반복은 코드가 막지만 세션 간 반복은 못 막음 → 데이터에 없는 시작 표현이면 재생성하는 검증 추가 고려) · 진단서 첫 시도 통과율 ~60%(재생성 시 +10초) · 부적 후보가 top_word 하나(예: 상대 최빈어)에 쏠림.
 6. 코치 채팅 UI 복구(현실 치료실에 "코치에게 묻기" 탭) — 백엔드 툴 유즈는 완성돼 있음.
 7. 답장 초안(F9.1) — SPEC "말투 재현 규격" 그대로 구현.
