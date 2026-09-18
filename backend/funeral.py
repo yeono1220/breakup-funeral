@@ -317,10 +317,20 @@ class Funeral:
 
     async def summon(self, messages: list[dict]) -> dict:
         hist = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")]
-        if not hist or hist[-1]["role"] != "user":
+        opener = not hist
+        if hist and hist[-1]["role"] != "user":
             return {"reply": random.choice(CANNED_REPLIES), "bubbles": None, "fallback": True}
-        query = hist[-1]["content"]
-        spec_text, spec = self._turn_spec(query, hist)
+        if opener:   # 사용자가 아직 아무 말도 안 함 → 상대가 먼저 던지는 첫 톡 (마지막 실제 대화 직후처럼)
+            query = ""
+            spec_text = (f"## 첫 톡\n사용자는 아직 아무 말도 안 했다. '우리 사이'의 마지막 실제 대화 바로 다음에 {self.target}이 먼저 보낼 법한 톡을 버블 1~2개로 써라. "
+                         "그 대화를 이어받거나(물건, 마지막 말, 미뤄둔 얘기), 며칠 지난 뒤 툭 던지는 말이어도 된다. 사용자의 말을 지어내지 말고, 새 사건도 만들지 마라.")
+            spec = {"n_bubbles": 2, "target_len": self.profile()["len_p50"], "similar": 0, "opener": True}
+            hist = [{"role": "user", "content": "(아직 아무 말도 안 함)"}]
+        else:
+            query = hist[-1]["content"]
+            spec_text, spec = self._turn_spec(query, hist)
+            if hist[0]["role"] == "assistant":   # 상대가 먼저 던진 첫 톡으로 시작한 대화 — API는 첫 메시지가 user여야 한다
+                hist = [{"role": "user", "content": "(아직 아무 말도 안 함)"}] + hist
         system = [{"type": "text", "text": self.summon_system(), "cache_control": {"type": "ephemeral"}}]
         fmt = {"type": "json_schema", "schema": {"type": "object", "properties": {"bubbles": {"type": "array", "items": {"type": "string"}}},
                                                  "required": ["bubbles"], "additionalProperties": False}}

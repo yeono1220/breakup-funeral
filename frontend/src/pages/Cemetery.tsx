@@ -4,6 +4,7 @@ import { store, usingSupabase } from '../cemeteryStore'
 import { Modal, useToast } from '../components/ui'
 import { Icon } from '../components/Icons'
 import { CemeteryScene, SCENE_CAP } from '../components/CemeteryScene'
+import { RitualBar } from '../components/RitualBar'
 
 /* 묘비 그리드: 자동 채움 + '내 관계' 묘비는 두 칸 (한 열뿐일 땐 span 해제) */
 const GRID_CSS = `
@@ -12,7 +13,7 @@ const GRID_CSS = `
 @media (max-width:600px){.tomb-grid.tg-flow{grid-template-columns:1fr;}.tomb-grid.tg-flow .tomb.span2{grid-column:auto;}}
 `
 
-export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: string | null; myKind: 'curse' | 'chrys'; myDays: number | null; myHanja: string | null }) {
+export function Cemetery({ myEpitaph, myKind, myDays, myHanja, arrived, onGoStep }: { myEpitaph: string | null; myKind: 'curse' | 'chrys'; myDays: number | null; myHanja: string | null; arrived?: boolean; onGoStep?: (i: number) => void }) {
   const toast = useToast()
   const [data, setData] = useState<CemeteryData | null>(null)
   const [guest, setGuest] = useState<Tomb | null>(null)
@@ -44,12 +45,23 @@ export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: st
     <section className="page">
       <style>{GRID_CSS}</style>
       <div className="wrap">
+        {onGoStep && <RitualBar current={3} onGo={onGoStep} />}
         <div className="cemetery-head reveal" style={{ ['--i' as any]: 0 }}>
           <h2 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon name="tomb" size={18} />공동묘지</h2>
           <div className="live-count"><span className="live-dot" />{data?.visitors != null ? <>다녀간 조문객 <span className="num">{data.visitors}</span>명 · </> : null}로그인 없이 헌화·방명록</div>
         </div>
         <p className="reveal" style={{ ['--i' as any]: 1, color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>떠나보낸 관계들이 잠든 곳 · 헌화는 묘비당 한 번, 방명록은 익명</p>
         {err && <div className="ctx-banner">공동묘지 서버에 연결 못 했어 ({err.slice(0, 60)})</div>}
+        {data && arrived && myEpitaph && mineIdx < 0 && (
+          <div className="arrive-card reveal" style={{ ['--i' as any]: 1 }}>
+            <div className="tiny muted">발인 · 마지막 순서</div>
+            <div className="tomb-epitaph" style={{ minHeight: 0, margin: '4px 0 8px' }}>{myEpitaph}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn btn-rose" onClick={bury}>여기 안치하기</button>
+              <span className="tiny faint">{myDays ? `향년 ${myDays}일 · ` : ''}{myKind === 'curse' ? '저주봉인' : '헌화'} 묘비로 세워져. 다른 조문객이 헌화하고 한마디 남길 수 있어</span>
+            </div>
+          </div>
+        )}
         {data && (
           <>
             <div className="reveal" style={{ ['--i' as any]: 2 }}>

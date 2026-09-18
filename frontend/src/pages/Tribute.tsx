@@ -3,6 +3,7 @@ import { api, type Amulet, type Relationship } from '../api'
 import { Portrait } from '../components/Portrait'
 import { BurnRitual } from '../components/BurnRitual'
 import { GrassField } from '../components/GrassField'
+import { RitualBar } from '../components/RitualBar'
 import { Icon } from '../components/Icons'
 import { Modal, useToast, fmtMin } from '../components/ui'
 
@@ -11,7 +12,7 @@ const CURSES = ['읽씹하던 그 손가락,\n앞으로 오타만 나거라', '�
 /* 추모 카드 2장: 국화 쪽을 살짝 넓게. 모바일은 1열 (index.css .tribute-grid 의 미디어쿼리와 동일 분기점) */
 const TRIBUTE_GRID_CSS = '.tribute-grid.tg-asym{grid-template-columns:1.2fr .8fr}@media (max-width:560px){.tribute-grid.tg-asym{grid-template-columns:1fr}}'
 
-export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmulet }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void; onAmulet?: (a: Amulet) => void }) {
+export function Tribute({ data, name, portrait, onBack, onNext, onGoStep, onBuried, onAmulet }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onGoStep?: (i: number) => void; onBuried: (kind: 'chrys' | 'curse') => void; onAmulet?: (a: Amulet) => void }) {
   const toast = useToast()
   const [lidTop, setLidTop] = useState(-58)
   const [closed, setClosed] = useState(false)
@@ -52,11 +53,7 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
     <section className="page">
       <style>{TRIBUTE_GRID_CSS}</style>
       <div className="wrap wrap-narrow">
-        <div className="steps-bar reveal" style={{ ['--i' as any]: 0 }}>
-          <span className="step-pill">① 사망 진단서</span><span className="step-arrow">→</span>
-          <span className="step-pill on">② 추모하기</span><span className="step-arrow">→</span>
-          <span className="step-pill">③ 공동묘지 안치</span>
-        </div>
+        <RitualBar current={thrown.length > 0 ? 2 : 1} onGo={onGoStep} />
         <h2 className="page-title reveal" style={{ textAlign: 'center', marginBottom: 8, ['--i' as any]: 1 }}>{title}</h2>
         <p className="reveal" style={{ textAlign: 'center', color: 'var(--text-soft)', fontSize: 14, marginBottom: 20, ['--i' as any]: 2 }}>{desc}</p>
 
@@ -125,7 +122,7 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmul
             </div>
             <div className="next-row reveal" style={{ ['--i' as any]: 4 }}>
               <button className="btn" style={{ flex: 1 }} onClick={onBack}>← 진단서로</button>
-              <button className="btn btn-rose" style={{ flex: 1 }} onClick={onNext}>공동묘지에 안치 →</button>
+              <button className="btn btn-rose" style={{ flex: 1 }} onClick={onNext}>발인 · 공동묘지로 →</button>
             </div>
           </div>
         )}

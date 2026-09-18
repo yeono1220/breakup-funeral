@@ -5,6 +5,7 @@ import { Portrait } from '../components/Portrait'
 import type { Persona } from '../api'
 import { fmtDate, fmtMin, fmtShort, fmtTime, smoothPath, useCountUp } from '../components/ui'
 import { Icon } from '../components/Icons'
+import { RitualBar } from '../components/RitualBar'
 
 const ATTACH_LABEL: Record<string, string> = { secure: '안정형', anxious: '불안형', avoidant: '회피형', fearful: '혼란형' }
 
@@ -16,8 +17,8 @@ export function displayName(name: string, alias: boolean) {
 const H_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 }
 const order = (n: number) => ({ ['--i' as string]: n } as CSSProperties)
 
-export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach }: {
-  data: Relationship; persona: Persona; alias: boolean; onNext: () => void; onEditContext?: () => void; onCoach?: () => void
+export function Diagnosis({ data, persona, alias, verdict, onNext, onEditContext, onCoach }: {
+  data: Relationship; persona: Persona; alias: boolean; verdict?: string | null; onNext: () => void; onEditContext?: () => void; onCoach?: () => void
 }) {
   const t = data.target
   const name = displayName(t, alias)
@@ -31,6 +32,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
   const lastDate = uc?.ended_at ? uc.ended_at + 'T00:00:00' : data.range[1]
   const [startedAt, setStartedAt] = useS<string | null>(uc?.started_at ?? null)
   const [editStart, setEditStart] = useS(false)
+  const [autopsy, setAutopsy] = useS(false)   // 차트·사건·신호는 접어두고 판결부터
   useEffect(() => { setStartedAt(uc?.started_at ?? null) }, [uc?.started_at])   // 코치 상담으로 시작일이 바뀌면 따라간다
   const startIso = startedAt ? startedAt + 'T00:00:00' : (uc?.suggested_start ? uc.suggested_start + 'T00:00:00' : data.range[0])
   const days = Math.max(1, Math.round((new Date(lastDate).getTime() - new Date(startIso).getTime()) / 86400000))
@@ -90,6 +92,8 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
       if (f === 'R' && w?.their_med != null) text = `상대 답장 간격이 ${fmtMin(w.their_med)}으로 ${e.direction === 'down' ? '늘어난' : '줄어든'} 시점`
       else if (f === 'F' && w) text = `대화가 하루 ${w.per_day}개로 ${e.direction === 'down' ? '줄어든' : '늘어난'} 시점`
       else if (f === 'I' && w?.my_start_share != null) text = `내가 먼저 말 건 비율 ${Math.round(w.my_start_share * 100)}%`
+      else if (f === 'C') text = e.direction === 'down' ? '대화 없는 날이 늘어난 시점' : '다시 매일 연락하던 시점'
+      else if (f === 'L') text = e.direction === 'down' ? '상대 답장이 짧아진 시점' : '상대 답장이 길어진 시점'
       const firstDrop = e.direction === 'down' && data.events.findIndex(x => x.direction === 'down') === i
       return { date: e.week_start, up: e.direction === 'up', text, quote: e.evidence_preview[0]?.text as string | undefined, id: e.evidence_ids[0] as number | undefined,
         tag: e.direction === 'up' ? `온도 +${e.delta}°` : firstDrop ? '마음 정리가 시작된 지점' : `온도 ${e.delta}°` }
@@ -104,12 +108,18 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
   return (
     <section className="page">
       <div className="wrap">
-        <div className="steps-bar">
-          <span className="step-pill on">① 사망 진단서</span><span className="step-arrow">→</span>
-          <span className="step-pill">② 추모하기</span><span className="step-arrow">→</span>
-          <span className="step-pill">③ 공동묘지 안치</span>
-        </div>
+        <RitualBar current={0} />
         <div className="section-gap">
+          {/* 판결: 처음 보는 사람이 3초 안에 "그래서 결론이 뭔데"를 잡게 */}
+          <div className="verdict fade-in">
+            <div className="tiny muted">판결</div>
+            <div className="verdict-title">{verdict ?? (last && last.text.length >= 4 && !/^(사진|이모티콘|동영상|파일:|https?:)/.test(last.text) ? `“${last.text.slice(0, 30)}”` : `${name}과의 ${days}일`)}</div>
+            <div className="verdict-line">
+              {causes[0] && <span>사인 1위 <b>{causes[0].label}</b> <span className="num">{causes[0].pct}%</span></span>}
+              <span>향년 <b className="num">{days}</b>일</span>
+              <span>{uc?.ending_label ? <b>{uc.ending_label}</b> : <>지금 <b>{data.stages.current_label}</b></>}</span>
+            </div>
+          </div>
           <div className="memorial fade-in">
             {!dead && <div className="alive-banner" style={{ textAlign: 'left' }}>기록상으론 아직 숨이 붙어 있어. 지금 단계는 <b>{data.stages.current_label}</b>, 온도는 {data.temperature.temp ?? '–'}°. 이미 끝난 사이라면 <a style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={onEditContext}>어떻게 끝났는지 알려줘</a>. 그쪽을 우선할게.</div>}
             {uc?.overrides_stage && <div className="ctx-banner" style={{ textAlign: 'left' }}>네가 말해준 대로 봤어: <b>{uc.ending_label}</b>.{data.stages.data_label ? ` 기록만 보면 '${data.stages.data_label}'이야. 회피형처럼 원래 연락이 뜸하면 이렇게 보이기도 해.` : ''}</div>}
@@ -164,6 +174,8 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
             )}
           </div>
 
+          {!autopsy && <button className="btn btn-block reveal" style={order(0)} onClick={() => setAutopsy(true)}>부검 기록 펼치기 · 애정도 추이 / 핵심 사건 / 이별 신호</button>}
+          {autopsy && <>
           <div className="card reveal" style={order(0)}>
             <h3 style={H_ROW}><Icon name="trend-down" size={14} />애정도 {dead ? '수직 낙하' : '추이'}</h3>
             <p className="sub">{peak ? <>최고점 <span className="rose-tag num">{peakShown}°</span> ({fmtShort(peak.week_start)} 주) → 지금 <span className="rose-tag num">{lastValid ? lastShown : '–'}°</span></> : '대화가 너무 적어'}</p>
@@ -234,6 +246,7 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext, onCoach
             <ul style={{ marginTop: 12, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }} className="muted">{data.signals.facts.map((f, i) => <li key={i}>{f.replace(t, name)}</li>)}</ul>
           </div>
 
+          </>}
           <div className="reveal" style={order(3)}>
             <button className="btn btn-rose btn-block" style={{ fontSize: 16, padding: 16 }} onClick={onNext}>{dead ? '이제 추모하러 가기 →' : '그래도 미리 보내볼래 →'}</button>
             {onCoach && <button className="btn btn-block" style={{ marginTop: 10 }} onClick={onCoach}>코치와 상담하기 · 사정을 말하면 진단서가 바뀌어</button>}

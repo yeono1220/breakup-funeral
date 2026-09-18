@@ -42,7 +42,8 @@ export function CoachChat({ name, me, target, msgs, setMsgs, onContextUpdated, o
     const paint = (extra?: CoachMsg) => setMsgs([...hist, { role: 'assistant', content: acc.replace(HL, '').trimEnd() }, ...(extra ? [extra] : [])])
     try {
       const r = await api.chat(hist.filter(m => !m.sys).map(m => ({ role: m.role, content: m.content })))
-      if (!r.ok || !r.body) throw new Error(`${r.status}`)
+      if (r.status === 400) throw new Error('서버에 네 데이터가 없어 — 서버가 쉬었다 깨면서 지워졌을 수 있어. 카톡을 다시 올려줘 (내 장례식 → 업로드)')
+      if (!r.ok || !r.body) throw new Error(`서버 오류 ${r.status}`)
       const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ''
       for (;;) {
         const { value, done } = await reader.read(); if (done) break
@@ -60,7 +61,7 @@ export function CoachChat({ name, me, target, msgs, setMsgs, onContextUpdated, o
       }
       paint(updated ? { role: 'assistant', content: '↑ 네가 말해준 사정을 기록했어. 진단서·향년·사인·소환술이 그걸 우선해서 다시 계산됐어.', sys: true } : undefined)
     } catch (e) {
-      setMsgs([...hist, { role: 'assistant', content: '지금은 코치가 답을 못 해. ' + String(e).slice(0, 80), sys: true }])
+      setMsgs([...hist, { role: 'assistant', content: '지금은 코치가 답을 못 해. ' + String(e instanceof Error ? e.message : e).slice(0, 120), sys: true }])
     } finally { setBusy(false); setStatus(null) }
   }
 

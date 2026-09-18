@@ -9,6 +9,8 @@ export function anonId(): string {
   } catch { return 'a_ephemeral_' + Math.random().toString(36).slice(2, 10) }
 }
 const H = () => ({ 'Content-Type': 'application/json', 'X-Anon': anonId() })
+/** 모든 요청에 세션 키(X-Session=익명 ID)를 실어 백엔드가 브라우저별로 데이터를 격리하게 한다. */
+const f = (url: string, init: RequestInit = {}) => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), 'X-Session': anonId() } })
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
@@ -16,36 +18,36 @@ async function j<T>(r: Response): Promise<T> {
 }
 
 export const api = {
-  loadSample: () => fetch(`${BASE}/load_sample`, { method: 'POST' }).then(j<{ added: number; senders: Sender[] }>),
+  loadSample: (me?: string, target?: string) => f(`${BASE}/load_sample`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ me: me || null, target: target || null }) }).then(j<{ added: number; senders: Sender[]; me: string; target: string }>),
   upload: (files: File[]) => {
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
-    return fetch(`${BASE}/upload`, { method: 'POST', body: fd }).then(j<{ added: number; senders: Sender[] }>)
+    return f(`${BASE}/upload`, { method: 'POST', body: fd }).then(j<{ added: number; senders: Sender[] }>)
   },
-  senders: () => fetch(`${BASE}/senders`).then(j<{ senders: Sender[]; me: string | null }>),
-  setMe: (me: string) => fetch(`${BASE}/me`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ me }) }).then(j),
-  setTarget: (target: string) => fetch(`${BASE}/target`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) }).then(j),
-  targets: () => fetch(`${BASE}/targets`).then(j<{ me: string; target: string | null; candidates: Candidate[] }>),
-  relationship: (p: string) => fetch(`${BASE}/relationship/${encodeURIComponent(p)}`).then(j<Relationship>),
-  compare: (a: string, b: string) => fetch(`${BASE}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`).then(j<Compare>),
-  around: (id: number) => fetch(`${BASE}/messages/around/${id}`).then(j<{ messages: Msg[]; focus: number }>),
-  clear: () => fetch(`${BASE}/data`, { method: 'DELETE' }).then(j),
+  senders: () => f(`${BASE}/senders`).then(j<{ senders: Sender[]; me: string | null }>),
+  setMe: (me: string) => f(`${BASE}/me`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ me }) }).then(j),
+  setTarget: (target: string) => f(`${BASE}/target`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) }).then(j),
+  targets: () => f(`${BASE}/targets`).then(j<{ me: string; target: string | null; candidates: Candidate[] }>),
+  relationship: (p: string) => f(`${BASE}/relationship/${encodeURIComponent(p)}`).then(j<Relationship>),
+  compare: (a: string, b: string) => f(`${BASE}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`).then(j<Compare>),
+  around: (id: number) => f(`${BASE}/messages/around/${id}`).then(j<{ messages: Msg[]; focus: number }>),
+  clear: () => f(`${BASE}/data`, { method: 'DELETE' }).then(j),
   chat: (messages: { role: string; content: string }[]) =>
-    fetch(`${BASE}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }),
-  persona: (person: string) => fetch(`${BASE}/persona/${encodeURIComponent(person)}`).then(j<Persona>),
-  setPersona: (p: Persona & { person: string }) => fetch(`${BASE}/persona`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }).then(j),
+    f(`${BASE}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }),
+  persona: (person: string) => f(`${BASE}/persona/${encodeURIComponent(person)}`).then(j<Persona>),
+  setPersona: (p: Persona & { person: string }) => f(`${BASE}/persona`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }).then(j),
   summon: (messages: { role: string; content: string }[]) =>
-    fetch(`${BASE}/summon`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }).then(j<{ reply: string; bubbles?: string[] | null; fallback?: boolean }>),
-  epitaph: () => fetch(`${BASE}/epitaph`).then(j<{ epitaph: string | null; fallback?: boolean }>),
-  eulogy: () => fetch(`${BASE}/eulogy`).then(j<{ text: string; fallback?: boolean }>),
-  curse: () => fetch(`${BASE}/curse`).then(j<Amulet>),
-  lastMessage: () => fetch(`${BASE}/last_message`).then(j<{ message: Msg | null }>),
-  cemetery: () => fetch(`${BASE}/cemetery`, { headers: { 'X-Anon': anonId() } }).then(j<CemeteryData>),
-  bury: (b: { epitaph: string; kind: 'chrys' | 'curse'; days?: number | null; hanja?: string | null }) => fetch(`${BASE}/cemetery`, { method: 'POST', headers: H(), body: JSON.stringify(b) }).then(j<{ id: number; existed: boolean }>),
-  flower: (id: number) => fetch(`${BASE}/cemetery/${id}/flower`, { method: 'POST', headers: H() }).then(j<{ flowers: number; already: boolean }>),
-  comments: (id: number) => fetch(`${BASE}/cemetery/${id}/comments`).then(j<{ comments: Comment[] }>),
-  addComment: (id: number, text: string) => fetch(`${BASE}/cemetery/${id}/comments`, { method: 'POST', headers: H(), body: JSON.stringify({ text }) }).then(j<{ nick: string; text: string }>),
-  legends: (refresh = false) => fetch(`${BASE}/legends${refresh ? '?refresh=1' : ''}`).then(j<Legends>),
+    f(`${BASE}/summon`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }) }).then(j<{ reply: string; bubbles?: string[] | null; fallback?: boolean }>),
+  epitaph: () => f(`${BASE}/epitaph`).then(j<{ epitaph: string | null; fallback?: boolean }>),
+  eulogy: () => f(`${BASE}/eulogy`).then(j<{ text: string; fallback?: boolean }>),
+  curse: () => f(`${BASE}/curse`).then(j<Amulet>),
+  lastMessage: () => f(`${BASE}/last_message`).then(j<{ message: Msg | null }>),
+  cemetery: () => f(`${BASE}/cemetery`, { headers: { 'X-Anon': anonId() } }).then(j<CemeteryData>),
+  bury: (b: { epitaph: string; kind: 'chrys' | 'curse'; days?: number | null; hanja?: string | null }) => f(`${BASE}/cemetery`, { method: 'POST', headers: H(), body: JSON.stringify(b) }).then(j<{ id: number; existed: boolean }>),
+  flower: (id: number) => f(`${BASE}/cemetery/${id}/flower`, { method: 'POST', headers: H() }).then(j<{ flowers: number; already: boolean }>),
+  comments: (id: number) => f(`${BASE}/cemetery/${id}/comments`).then(j<{ comments: Comment[] }>),
+  addComment: (id: number, text: string) => f(`${BASE}/cemetery/${id}/comments`, { method: 'POST', headers: H(), body: JSON.stringify({ text }) }).then(j<{ nick: string; text: string }>),
+  legends: (refresh = false) => f(`${BASE}/legends${refresh ? '?refresh=1' : ''}`).then(j<Legends>),
 }
 
 export type Ending = 'ghosted' | 'dumped' | 'dumper' | 'faded' | 'mutual' | 'ongoing'

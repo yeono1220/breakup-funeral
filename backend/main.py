@@ -6,7 +6,9 @@ import json
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from contextvars import ContextVar
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -30,9 +32,41 @@ UPLOAD_DIR = db.DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 _HL = re.compile(r"<highlight>(.*?)</highlight>", re.S)
 
+# ---------------------------------------------------------------- 세션 격리
+# 브라우저마다 X-Session(프론트의 익명 ID)을 보내고, 그 값으로 SQLite 파일을 나눈다.
+# 나/상대/persona/메시지가 전부 그 파일 안이라 라우트는 손댈 게 없다. 헤더가 없으면(스크립트·구버전) 기본 파일.
+_SID: ContextVar[str | None] = ContextVar("sid", default=None)
+_SID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+
+
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    sid = request.headers.get("x-session") or request.headers.get("x-anon")
+    token = _SID.set(sid if sid and _SID_RE.match(sid) else None)
+    try:
+        return await call_next(request)
+    finally:
+        _SID.reset(token)
+
+
+def _sid() -> str | None:
+    return _SID.get()
+
 
 def _con():
+    sid = _sid()
+    return db.connect(db.DATA_DIR / "sessions" / f"{sid}.db") if sid else db.connect()
+
+
+def _shared_con():
+    """공동묘지 폴백처럼 모두가 같이 보는 데이터는 세션과 무관하게 한 파일."""
     return db.connect()
+
+
+def _upload_dir() -> Path:
+    d = UPLOAD_DIR / _sid() if _sid() else UPLOAD_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _coach() -> Coach:
@@ -87,7 +121,7 @@ async def upload(files: list[UploadFile] = File(...)):
     con = _con()
     added, rooms = 0, []
     for f in files:
-        dest = UPLOAD_DIR / f.filename
+        dest = _upload_dir() / Path(f.filename or 'upload.txt').name
         dest.write_bytes(await f.read())
         msgs, saved = parse_file_meta(dest)
         db.bump_saved_at(con, saved)
@@ -97,19 +131,45 @@ async def upload(files: list[UploadFile] = File(...)):
     return {"added": added, "files": rooms, "senders": db.senders(con)[:20]}
 
 
+class SampleBody(BaseModel):
+    me: str | None = None        # 샘플 속 '나'(고연오)를 이 이름으로
+    target: str | None = None    # 샘플 속 상대(김하늘)를 이 이름으로
+
+
+SAMPLE_ME, SAMPLE_TARGET = "고연오", "김하늘"
+
+
+def _rename(text: str, me: str | None, target: str | None) -> str:
+    if me:
+        text = text.replace(SAMPLE_ME, me).replace("연오야", f"{me[-2:]}야").replace("연오", me[-2:])
+    if target:
+        text = text.replace(SAMPLE_TARGET, target)
+    return text
+
+
 @app.post("/load_sample")
-async def load_sample():
+async def load_sample(body: SampleBody | None = None):
+    """데모 데이터 적재. 이름을 주면 샘플의 '나'/'상대' 이름을 그걸로 바꿔서 넣는다 (자기 이름으로 보이게)."""
+    me = (body.me or "").strip()[:20] if body else ""
+    target = (body.target or "").strip()[:20] if body else ""
+    if me and target and me == target:
+        raise HTTPException(400, "내 이름과 상대 이름이 같아요")
     con = _con()
     db.clear(con)
-    con.execute("DELETE FROM settings WHERE key IN ('saved_at','target')")
+    con.execute("DELETE FROM settings")
     con.commit()
     sample = Path(__file__).parent.parent / "sample"
     total = 0
     for p in sorted(sample.glob("*.txt")):
         msgs, saved = parse_file_meta(p)
+        for m in msgs:
+            m.sender = _rename(m.sender, me, target)
+            m.room = _rename(m.room, me, target)
+            m.text = _rename(m.text, me, target)
         db.bump_saved_at(con, saved)
         total += db.insert_messages(con, msgs)
-    return {"added": total, "senders": db.senders(con)[:20]}
+    db.set_setting(con, "me", me or SAMPLE_ME)
+    return {"added": total, "senders": db.senders(con)[:20], "me": me or SAMPLE_ME, "target": target or SAMPLE_TARGET}
 
 
 class MeBody(BaseModel):
@@ -437,28 +497,28 @@ def _anon(x_anon: str | None) -> str:
 
 @app.get("/cemetery")
 async def cemetery_list(x_anon: str | None = Header(default=None)):
-    return cemetery.list_tombs(_con(), x_anon)
+    return cemetery.list_tombs(_shared_con(), x_anon)
 
 
 @app.post("/cemetery")
 async def cemetery_bury(body: BuryBody, x_anon: str | None = Header(default=None)):
-    return cemetery.bury(_con(), _anon(x_anon), body.epitaph, body.kind, body.days, body.hanja)
+    return cemetery.bury(_shared_con(), _anon(x_anon), body.epitaph, body.kind, body.days, body.hanja)
 
 
 @app.post("/cemetery/{tomb_id}/flower")
 async def cemetery_flower(tomb_id: int, x_anon: str | None = Header(default=None)):
-    return cemetery.flower(_con(), tomb_id, _anon(x_anon))
+    return cemetery.flower(_shared_con(), tomb_id, _anon(x_anon))
 
 
 @app.get("/cemetery/{tomb_id}/comments")
 async def cemetery_comments(tomb_id: int):
-    return {"comments": cemetery.comments(_con(), tomb_id)}
+    return {"comments": cemetery.comments(_shared_con(), tomb_id)}
 
 
 @app.post("/cemetery/{tomb_id}/comments")
 async def cemetery_comment(tomb_id: int, body: CommentBody, x_anon: str | None = Header(default=None)):
     try:
-        return cemetery.add_comment(_con(), tomb_id, _anon(x_anon), body.text)
+        return cemetery.add_comment(_shared_con(), tomb_id, _anon(x_anon), body.text)
     except ValueError:
         raise HTTPException(400, "내용이 비었어요")
 

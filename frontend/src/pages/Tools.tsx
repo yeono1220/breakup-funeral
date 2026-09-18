@@ -52,11 +52,25 @@ const NOTE_DEMO = '↑ 지금은 예시 답변이야'
 const NOTE_REAL = '↑ 실제 카톡 패턴으로 만든 답이야'
 
 function Summon({ name, onClose }: { name: string; onClose: () => void }) {
-  const [msgs, setMsgs] = useState<{ role: 'user' | 'assistant'; content: string; note?: string }[]>([{ role: 'assistant', content: '…왜 불렀어?' }])
+  const [msgs, setMsgs] = useState<{ role: 'user' | 'assistant'; content: string; note?: string }[]>([])
   const [v, setV] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(true)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => { box.current?.scrollTo({ top: 1e9 }) }, [msgs])
+  // 첫 톡은 상대가 먼저 — 마지막 실제 대화 직후처럼
+  useEffect(() => {
+    let alive = true
+    api.summon([]).then(async r => {
+      if (!alive) return
+      const bubbles = r.bubbles && r.bubbles.length ? r.bubbles : ['…왜 불렀어?']
+      for (let i = 0; i < bubbles.length; i++) {
+        if (i) await new Promise(res => setTimeout(res, 700))
+        if (!alive) return
+        setMsgs(bubbles.slice(0, i + 1).map((b, j) => ({ role: 'assistant' as const, content: b, note: j === bubbles.length - 1 && r.fallback ? NOTE_DEMO : undefined })))
+      }
+    }).catch(() => alive && setMsgs([{ role: 'assistant', content: '…왜 불렀어?' }])).finally(() => alive && setBusy(false))
+    return () => { alive = false }
+  }, [])
 
   async function say(text?: string) {
     const t = (text ?? v).trim(); if (!t || busy) return
