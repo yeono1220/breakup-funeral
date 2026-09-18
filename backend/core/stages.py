@@ -104,8 +104,27 @@ def segments(weeks: list[dict]) -> list[dict]:
     return segs
 
 
+def no_regress(weeks: list[dict]) -> list[dict]:
+    """이미 '연애'였으면 '썸'으로 못 돌아간다 — 연애 중 한 주 볼륨이 빠진 걸 썸으로 읽는 오분류 방지.
+    '단절'을 지나면 리셋(헤어졌다 다시 썸 타는 경우는 살린다)."""
+    was_dating, last = False, None
+    out = []
+    for w in weeks:
+        st = w["stage"]
+        if st == "cutoff":
+            was_dating = False
+        elif st == "dating":
+            was_dating = True
+        elif st == "some" and was_dating:
+            # 식던 중 한 주 '썸'처럼 보이면 다시 연애가 아니라 아직 식는 중 — 진짜 연애 신호(dating 히트)가 있어야 돌아온다
+            w = {**w, "stage": "cooling" if last == "cooling" else "dating"}
+        last = w["stage"]
+        out.append(w)
+    return out
+
+
 def detect_stages(series: list[dict]) -> dict:
-    weeks = smooth(classify_weeks(series))
+    weeks = smooth(no_regress(classify_weeks(series)))
     segs = segments(weeks)
     current = segs[-1]["stage"] if segs else "steady"
     # 렌즈 매핑: 썸/연애중/이별
