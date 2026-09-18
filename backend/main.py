@@ -35,8 +35,7 @@ def _coach() -> Coach:
     me, target = db.get_setting(con, "me"), db.get_setting(con, "target")
     if not me or not target:
         raise HTTPException(400, "먼저 /me, /target 으로 나와 상대를 설정해줘")
-    persona = json.loads(db.get_setting(con, "persona", "{}") or "{}").get(target) or {}
-    return Coach(db.all_messages(con), me, target, db.now_ts(con), persona)
+    return Coach(db.all_messages(con), me, target, db.now_ts(con), _persona_of(con, target))
 
 
 # ---------------------------------------------------------------- ingest
@@ -105,26 +104,51 @@ async def targets():
     return {"me": me, "target": db.get_setting(con, "target"), "candidates": relationship.candidates(db.all_messages(con), me)[:20]}
 
 
+ENDED = {"ghosted", "dumped", "dumper", "faded", "mutual"}   # 사용자가 "끝났다"고 알려준 상태
+ENDING_LABEL = {"ghosted": "잠수·읽씹", "dumped": "차임", "dumper": "내가 끝냄", "faded": "자연소멸", "mutual": "합의 이별",
+                "ongoing": "아직 안 끝남", None: None}
+
+
 class PersonaBody(BaseModel):
     person: str
     mbti: str | None = None          # "ENFP" | None(모름)
     attachment: str | None = None    # secure | anxious | avoidant | fearful | None
-    note: str | None = None          # 자유 메모 ("취미: 러닝")
+    ending: str | None = None        # ghosted | dumped | dumper | faded | mutual | ongoing | None
+    context: str | None = None       # 어떻게 끝났는지 자유 서술
+    ended_at: str | None = None      # YYYY-MM-DD (선택)
+    alias: bool = True               # 화면에서 가명 표시
+    portrait: str | None = None      # data URL (사용자가 그린/올린 X 얼굴)
+    note: str | None = None          # (구버전 호환)
+
+
+def _persona_of(con, person: str) -> dict:
+    cur = json.loads(db.get_setting(con, "persona", "{}") or "{}")
+    p = cur.get(person) or {}
+    if "alias" not in p:
+        p["alias"] = p.get("note") == "alias" or not p.get("note")
+    return p
 
 
 @app.post("/persona")
 async def set_persona(body: PersonaBody):
     con = _con()
     cur = json.loads(db.get_setting(con, "persona", "{}") or "{}")
-    cur[body.person] = {k: v for k, v in body.model_dump().items() if k != "person"}
+    prev = cur.get(body.person) or {}
+    incoming = {k: v for k, v in body.model_dump().items() if k != "person"}
+    if incoming.get("portrait") is None and prev.get("portrait"):   # 초상화 미포함 요청이면 기존 값 유지
+        incoming["portrait"] = prev["portrait"]
+    cur[body.person] = incoming
     db.set_setting(con, "persona", json.dumps(cur, ensure_ascii=False))
-    return {"ok": True, "persona": cur[body.person]}
+    out = dict(incoming); out["portrait"] = bool(out.get("portrait"))
+    return {"ok": True, "persona": out}
 
 
 @app.get("/persona/{person}")
 async def get_persona(person: str):
-    cur = json.loads(db.get_setting(_con(), "persona", "{}") or "{}")
-    return {"person": person, **(cur.get(person) or {"mbti": None, "attachment": None, "note": None})}
+    p = _persona_of(_con(), person)
+    return {"person": person, "mbti": p.get("mbti"), "attachment": p.get("attachment"), "ending": p.get("ending"),
+            "context": p.get("context"), "ended_at": p.get("ended_at"), "alias": p.get("alias", True),
+            "portrait": p.get("portrait"), "ending_label": ENDING_LABEL.get(p.get("ending"))}
 
 
 @app.delete("/data")
@@ -143,7 +167,19 @@ async def relationship_view(person: str):
     me = db.get_setting(con, "me")
     if not me:
         raise HTTPException(400, "me not set")
-    return relationship.build(db.all_messages(con), me, person, db.now_ts(con))
+    r = relationship.build(db.all_messages(con), me, person, db.now_ts(con))
+    p = _persona_of(con, person)
+    ending = p.get("ending")
+    # 사용자가 알려준 이별 컨텍스트가 데이터 판정을 덮어쓴다 (회피형 X = 데이터상 '썸'으로 보이는 경우 등)
+    r["user_context"] = {"ending": ending, "ending_label": ENDING_LABEL.get(ending), "context": p.get("context"),
+                         "ended_at": p.get("ended_at"), "overrides_stage": ending in ENDED}
+    if ending in ENDED:
+        r["stages"]["data_lens"] = r["stages"]["lens"]
+        r["stages"]["data_label"] = r["stages"]["current_label"]
+        r["stages"]["lens"] = "breakup"
+        r["stages"]["current_stage"] = "ended"
+        r["stages"]["current_label"] = f"이별 ({ENDING_LABEL[ending]})"
+    return r
 
 
 @app.get("/compare")
@@ -252,8 +288,7 @@ def _funeral() -> Funeral:
     me, target = db.get_setting(con, "me"), db.get_setting(con, "target")
     if not me or not target:
         raise HTTPException(400, "먼저 나와 상대를 설정해줘")
-    persona = json.loads(db.get_setting(con, "persona", "{}") or "{}").get(target) or {}
-    return Funeral(db.all_messages(con), me, target, db.now_ts(con), persona)
+    return Funeral(db.all_messages(con), me, target, db.now_ts(con), _persona_of(con, target))
 
 
 @app.post("/summon")

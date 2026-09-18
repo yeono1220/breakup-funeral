@@ -21,6 +21,21 @@ _WS = os.getenv("ANTHROPIC_WORKSPACE_ID")
 client = anthropic.AsyncAnthropic(default_headers={"anthropic-workspace-id": _WS} if _WS else None)
 
 ATTACH_KO = {"secure": "안정형", "anxious": "불안형", "avoidant": "회피형", "fearful": "혼란형"}
+ENDING_KO = {"ghosted": "상대가 잠수/읽씹으로 끝냄", "dumped": "내가 차임", "dumper": "내가 끝냄", "faded": "자연소멸", "mutual": "합의 이별", "ongoing": "아직 안 끝남"}
+
+# 🔮 애착유형별 X 저주 부적 — (한자, 음, 뜻). 앞쪽이 밈 버전, 뒤가 정통 버전.
+AMULETS = {
+    "secure": [("前緣已斷\n後悔未斷", "전연이단 후회미단", "전 애인과의 인연은 끊겼으나 후회는 끊기지 않으리라"),
+               ("有緣無愛", "유연무애", "인연은 있었으나 사랑은 끝났도다")],
+    "anxious": [("前任常思", "전임상사", "평생 전 애인을 생각하리라"),
+                ("欲忘愈憶", "욕망유억", "잊고 싶을수록 더욱 생각나리라")],
+    "avoidant": [("戀愛即逃", "연애즉도", "연애만 시작하면 도망치리라"),
+                 ("近則恐遠", "근즉공원", "가까워지면 두렵고, 멀어지면 또 외로우리라")],
+    "fearful": [("來去無常", "래거무상", "왔다가 도망가고, 도망갔다가 다시 오리라"),
+                ("欲近欲避", "욕근욕피", "만나고 싶으면서도 도망치고 싶으리라")],
+    None: [("已讀無視\n永劫回歸", "이독무시 영겁회귀", "읽씹은 돌고 돌아 네게로 돌아오리라"),
+           ("前任常思", "전임상사", "평생 전 애인을 생각하리라")],
+}
 CANNED_REPLIES = ["ㅇㅇ 근데 그건 네 생각이고", "바쁘다니까 자꾸", "미안한데 나 진짜 변한 거 없어", "그때도 말했잖아 ㅎㅎ",
                   "굳이 지금 이걸 물어봐야 돼?", "너 또 이런다 진짜", "나중에 연락할게"]
 CURSES = ["읽씹하던 그 손가락,\n앞으로 오타만 나거라", "너의 모든 소개팅에\n어색한 침묵이 깃들기를", "새 연애 3일 만에\n전 애인 얘기 튀어나와라",
@@ -43,6 +58,8 @@ def _clean_reply(text: str) -> str:
 def _fmt_min(m: float | None) -> str:
     if m is None:
         return "–"
+    if m < 1:
+        return "1분 이내"
     return f"{m:.0f}분" if m < 60 else (f"{m/60:.1f}시간" if m < 1440 else f"{m/1440:.1f}일")
 
 
@@ -52,6 +69,17 @@ class Funeral:
         self.persona = persona or {}
         self.rel = relationship_messages(all_msgs, me, target)
         self.brief = rel_mod.build(all_msgs, me, target, now)
+
+    def context_line(self) -> str:
+        p = self.persona
+        bits = []
+        if p.get("ending"):
+            bits.append(f"이별 방식(사용자 진술): {ENDING_KO.get(p['ending'], p['ending'])}")
+        if p.get("ended_at"):
+            bits.append(f"헤어진 날: {p['ended_at']}")
+        if p.get("context"):
+            bits.append(f"사용자가 설명한 상황: {p['context'][:400]}")
+        return "\n".join(bits) if bits else "(사용자가 추가로 알려준 이별 상황 없음)"
 
     # ------------------------------------------------------------ 상대 말투 자료
     def their_style_pack(self) -> dict:
@@ -77,7 +105,8 @@ class Funeral:
 - ㅋㅋ 사용률 {st.get('kkk_ratio')}, 물음표 {st.get('question_ratio')}, 느낌표 {st.get('exclaim_ratio')}, 이모지 {st.get('emoji_ratio')}. 이 비율을 벗어나지 마.
 - 자주 쓰는 표현: {', '.join(w for w, _ in st.get('top_words', [])[:12])}
 - 성격 힌트(사용자 입력): {persona_line or '없음'}
-- 관계 현재 상태: {b['stages']['current_label']}, 최근 상대 답장 중앙값 {_fmt_min(b['symmetry']['reply']['their_median_min'])}
+- 관계 현재 상태(데이터): {b['stages']['current_label']}, 최근 상대 답장 중앙값 {_fmt_min(b['symmetry']['reply']['their_median_min'])}
+- {self.context_line()}  ← 데이터와 다르면 이 사용자 진술을 우선해. (예: 데이터는 '썸'이지만 사용자가 '잠수로 끝났다'면 이미 끝난 관계로 연기)
 
 ## 실제로 보낸 메시지 샘플 (이 톤 그대로)
 {chr(10).join('- ' + e for e in p['examples'][-25:])}
@@ -137,24 +166,35 @@ class Funeral:
 
 {self._facts()}
 
-규칙: 5~6문장, 반말 아닌 부드러운 존댓말("~에요"), 숫자는 위 사실에서만 인용(최소 2개), 상대의 마음을 단정하지 말고 관계의 모양만 말해, 마지막 문장은 놓아주라는 말로 끝내. 이모지 1개까지. 제목 없이 본문만."""
+[사용자가 알려준 이별 상황]
+{self.context_line()}
+
+규칙: 5~6문장, 반말 아닌 부드러운 존댓말("~에요"), 숫자는 위 사실에서만 인용(최소 2개), 상대의 마음을 단정하지 말고 관계의 모양만 말해, 사용자가 알려준 이별 상황이 있으면 그 맥락에 맞춰(데이터 판정과 달라도 사용자 진술 우선), 마지막 문장은 놓아주라는 말로 끝내. 이모지 1개까지. 제목 없이 본문만."""
         try:
             resp = await client.messages.create(model=MODEL, max_tokens=6000, output_config={"effort": "medium"}, messages=[{"role": "user", "content": prompt}])
             return {"text": "".join(b.text for b in resp.content if b.type == "text").strip()}
         except Exception:  # noqa: BLE001
             return {"text": self.template_eulogy(), "fallback": True}
 
-    # ------------------------------------------------------------ 저주 부적
+    # ------------------------------------------------------------ 저주 부적 (애착유형별 사자성어 + 맞춤 한 줄)
     async def curse(self) -> dict:
         b = self.brief; r = b["symmetry"]["reply"]; w = b["waiting"]
+        attach = self.persona.get("attachment")
+        hanja, reading, meaning = AMULETS.get(attach, AMULETS[None])[0]
         st = stats.my_style([m for m in self.rel if m.sender == self.target], self.target)
-        prompt = f"""'{self.target}'의 카톡 패턴으로 웃긴 '저주 부적' 문구를 하나 써. 두 줄, 각 줄 12자 이내, 줄바꿈 하나. 잔인/신체 위해/혐오 금지, 유치하고 귀엽게 소심한 저주.
-패턴: 답장 중앙값 {_fmt_min(r['their_median_min'])}, 자주 쓰는 말 {', '.join(w_ for w_, _ in st.get('top_words', [])[:6])}, 평균 {st.get('avg_len')}자 단답{(', 마지막 메시지에 %s시간째 미응답' % w['age_hours']) if w else ''}.
-예시 톤: "읽씹하던 그 손가락,\\n앞으로 오타만 나거라". 문구만 출력."""
+        prompt = f"""부적에 이미 큰 글씨로 '{hanja.replace(chr(10), ' ')}'({reading}: {meaning})이 박혀 있어. 그 아래 작게 들어갈 '맞춤 저주 한 줄'을 써.
+'{self.target}'의 카톡 패턴: 답장 중앙값 {_fmt_min(r['their_median_min'])}, 자주 쓰는 말 {', '.join(w_ for w_, _ in st.get('top_words', [])[:6])}, 평균 {st.get('avg_len')}자 단답{(', 마지막 메시지에 %s시간째 미응답' % w['age_hours']) if w else ''}.
+{self.context_line()}
+조건: 한 줄(20자 이내), 잔인/신체 위해/혐오 금지, 유치하고 소심하게 웃긴 저주, 상대의 실제 패턴 하나를 반드시 넣기. 예: "잘자 보낸 밤마다 와이파이 끊겨라". 문구만 출력."""
+        base = {"hanja": hanja, "reading": reading, "meaning": meaning, "attachment": attach,
+                "attachment_label": ATTACH_KO.get(attach or "", "유형 미상")}
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "low"}, messages=[{"role": "user", "content": prompt}])
-            text = "".join(b_.text for b_ in resp.content if b_.type == "text").strip().strip('"').replace("\\n", "\n")
-            lines = [l.strip() for l in text.splitlines() if l.strip()][-2:]
-            return {"text": "\n".join(lines) if lines else random.choice(CURSES)}
+            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "low"},
+                                                messages=[{"role": "user", "content": prompt}])
+            text = "".join(b_.text for b_ in resp.content if b_.type == "text").strip().strip('"')
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            line = lines[-1] if lines else random.choice(CURSES).replace("\n", " ")
+            return {**base, "line": line[:40], "text": line[:40]}
         except Exception:  # noqa: BLE001
-            return {"text": random.choice(CURSES), "fallback": True}
+            line = random.choice(CURSES).replace("\n", " ")
+            return {**base, "line": line, "text": line, "fallback": True}

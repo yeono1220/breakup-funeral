@@ -281,3 +281,31 @@ input,textarea{font-family:inherit;}
 .flower-choice:hover{transform:translateY(-3px);border-color:var(--chrys-deep);}
 .flower-choice span{font-size:12px;color:var(--text-soft);}
 .bury-done{text-align:center;font-family:'Nanum Pen Script';font-size:26px;color:var(--ok);margin-top:20px;}
+
+/* drawpad */
+.drawpad{display:flex;flex-direction:column;gap:10px;align-items:center;}
+.drawpad canvas{width:min(300px,100%);aspect-ratio:1;background:#fff;border-radius:14px;border:2px solid var(--line2);touch-action:none;cursor:crosshair;}
+.dp-tools{display:flex;flex-direction:column;gap:8px;align-items:center;}
+.dp-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center;}
+.dp-color{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;}
+.dp-color.on{border-color:#fff;box-shadow:0 0 0 2px var(--rose);}
+.dp-btn{background:var(--panel2);border:1.5px solid var(--line2);color:var(--text);border-radius:10px;padding:6px 10px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.dp-btn.on{border-color:var(--rose);color:var(--rose-soft);}
+.dp-btn i{display:inline-block;border-radius:50%;background:var(--text);}
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chips .pick{padding:8px 12px;}
+textarea.ctx{width:100%;min-height:84px;background:var(--panel2);border:1.5px solid var(--line2);border-radius:12px;padding:10px 12px;color:var(--text);font-size:14px;resize:vertical;}
+textarea.ctx:focus{outline:none;border-color:var(--rose);}
+input.date{background:var(--panel2);border:1.5px solid var(--line2);border-radius:10px;padding:8px 10px;color:var(--text);font-size:13px;}
+.ctx-banner{background:rgba(217,106,94,.12);border:1.5px solid var(--rose);border-radius:14px;padding:10px 14px;font-size:13px;color:var(--rose-soft);margin-bottom:16px;line-height:1.5;}
+/* 부적 */
+.amulet{width:230px;margin:16px auto 0;background:linear-gradient(180deg,#F6DE8C,#EFC95C);border:3px solid #B23A2E;border-radius:6px;padding:16px 12px 14px;position:relative;box-shadow:0 10px 30px rgba(178,58,46,.35), inset 0 0 0 3px #F6DE8C, inset 0 0 0 5px #B23A2E;text-align:center;color:#8E1F14;}
+.amulet::before{content:'🔮';position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:26px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
+.am-head{font-size:11px;letter-spacing:.3em;margin-top:4px;color:#B23A2E;}
+.am-hanja{font-family:'Nanum Pen Script','Gowun Dodum',serif;font-weight:400;writing-mode:vertical-rl;text-orientation:upright;font-size:46px;line-height:1.05;color:#B23A2E;margin:10px auto 6px;min-height:200px;display:flex;justify-content:center;gap:6px;text-shadow:0 1px 0 rgba(255,255,255,.4);}
+.am-hanja span{display:block;}
+.am-read{font-size:15px;color:#8E1F14;font-family:'Nanum Pen Script';font-size:22px;}
+.am-mean{font-size:12px;color:#7A2A20;line-height:1.5;margin-top:2px;padding:0 4px;}
+.am-line{margin-top:10px;border-top:1.5px dashed #B23A2E;padding-top:8px;font-size:13px;color:#8E1F14;font-family:'Nanum Pen Script';font-size:19px;}
+.am-seal{position:absolute;right:10px;bottom:10px;width:34px;height:34px;border:2.5px solid #B23A2E;border-radius:6px;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;color:#B23A2E;transform:rotate(-8deg);opacity:.85;font-family:'Nanum Pen Script';font-size:16px;}
+.pit-portrait{position:absolute;left:50%;bottom:16px;transform:translateX(-50%) rotate(-4deg);z-index:2;background:#fff;padding:6px 6px 14px;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.35);}

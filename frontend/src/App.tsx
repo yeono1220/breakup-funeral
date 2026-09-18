@@ -17,6 +17,7 @@ export default function App() {
 function Shell() {
   const toast = useToast()
   const [page, setPage] = useState<Page>('upload')
+  const [jump, setJump] = useState<'persona' | undefined>(undefined)
   const [pair, setPair] = useState<{ me: string; target: string } | null>(null)
   const [data, setData] = useState<Relationship | null>(null)
   const [persona, setPersona] = useState<Persona>({ mbti: null, attachment: null, note: null })
@@ -31,11 +32,11 @@ function Shell() {
     if ((p === 'diagnosis' || p === 'tribute') && !data) { toast('먼저 카톡을 올려 진단서를 발급받아요'); setPage('upload'); return }
     setPage(p); window.scrollTo(0, 0)
   }
-  const start = (me: string, target: string) => { setPair({ me, target }); api.persona(target).then(setPersona).catch(() => {}); setPage('analyze') }
-  const onDone = useCallback((r: Relationship) => { setData(r); setPage('diagnosis'); window.scrollTo(0, 0) }, [])
+  const start = (me: string, target: string) => { setJump(undefined); setPair({ me, target }); api.persona(target).then(setPersona).catch(() => {}); setPage('analyze') }
+  const onDone = useCallback((r: Relationship) => { setData(r); if (pair) api.persona(pair.target).then(setPersona).catch(() => {}); setPage('diagnosis'); window.scrollTo(0, 0) }, [pair])
   const onError = useCallback((e: string) => { toast('분석 실패: ' + e.slice(0, 80)); setPage('upload') }, [toast])
 
-  const alias = persona.note === 'alias'
+  const alias = persona.alias ?? persona.note === 'alias'
   const name = pair ? displayName(pair.target, alias) : ''
   const epitaph = data?.last_message ? `"${data.last_message.text.slice(0, 30)}" — 향년 ${Math.max(1, Math.round((new Date(data.range[1]).getTime() - new Date(data.range[0]).getTime()) / 86400000))}일` : null
   const navOn = page === 'cemetery' ? 'cemetery' : page === 'tools' ? 'tools' : 'funeral'
@@ -50,10 +51,10 @@ function Shell() {
           <a className={navOn === 'tools' ? 'on' : ''} onClick={() => go('tools')}>현실 치료실</a>
         </div>
       </div>
-      {page === 'upload' && <Upload onStart={start} />}
+      {page === 'upload' && <Upload onStart={start} jumpTo={jump} />}
       {page === 'analyze' && pair && <Analyze target={pair.target} onDone={onDone} onError={onError} />}
-      {page === 'diagnosis' && data && <Diagnosis data={data} persona={persona} alias={alias} onNext={() => go('tribute')} />}
-      {page === 'tribute' && data && <Tribute data={data} name={name} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} />}
+      {page === 'diagnosis' && data && <Diagnosis data={data} persona={persona} alias={alias} onNext={() => go('tribute')} onEditContext={() => { setJump('persona'); setPage('upload'); window.scrollTo(0, 0) }} />}
+      {page === 'tribute' && data && <Tribute data={data} name={name} portrait={persona.portrait ?? null} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} />}
       {page === 'cemetery' && <Cemetery myEpitaph={epitaph} myKind={buriedKind} />}
       {page === 'tools' && <Tools name={name || '그 사람'} />}
     </>

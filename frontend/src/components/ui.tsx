@@ -39,7 +39,7 @@ export function Modal({ title, onClose, children, bodyClass }: { title: string; 
 
 // ---------------------------------------------------------------- helpers
 export const fmtMin = (m: number | null | undefined) =>
-  m == null ? '–' : m < 60 ? `${Math.round(m)}분` : m < 1440 ? `${(m / 60).toFixed(1)}시간` : `${(m / 1440).toFixed(1)}일`
+  m == null ? '–' : m < 1 ? '1분 이내' : m < 60 ? `${Math.round(m)}분` : m < 1440 ? `${(m / 60).toFixed(1)}시간` : `${(m / 1440).toFixed(1)}일`
 export const fmtDate = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}.${iso.slice(8, 10)}`
 export const fmtShort = (iso: string) => `${+iso.slice(5, 7)}.${iso.slice(8, 10)}`
 export const fmtTime = (iso: string) => {

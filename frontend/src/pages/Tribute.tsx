@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type Relationship } from '../api'
-import { LyingChar } from '../components/Char'
+import { api, type Amulet, type Relationship } from '../api'
+import { Portrait } from '../components/Portrait'
 import { GrassField } from '../components/GrassField'
 import { Modal, useToast, fmtMin } from '../components/ui'
 
 const CURSES = ['읽씹하던 그 손가락,\n앞으로 오타만 나거라', '너의 모든 소개팅에\n어색한 침묵이 깃들기를', '새 연애 3일 만에\n전 애인 얘기 튀어나와라', '너의 인스타 스토리\n조회수 평생 한 자리수', "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
 
-export function Tribute({ data, name, onBack, onNext, onBuried }: { data: Relationship; name: string; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void }) {
+export function Tribute({ data, name, portrait, onBack, onNext, onBuried }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void }) {
   const toast = useToast()
   const [lidTop, setLidTop] = useState(-58)
   const [closed, setClosed] = useState(false)
@@ -58,7 +58,7 @@ export function Tribute({ data, name, onBack, onNext, onBuried }: { data: Relati
           <GrassField />
           <div className="pit">
             <div className="pit-wall" />
-            <div className="pit-char"><LyingChar width={170} /></div>
+            <div className="pit-portrait"><Portrait src={portrait} size={96} gray /></div>
             <div className={'coffin-lid' + (dragging ? ' dragging' : '') + (closed ? ' closed' : '')} style={{ top: lidTop }}
               onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
               <svg width="240" height="70" viewBox="0 0 240 70"><path d="M16 8 L224 8 L232 34 L224 62 L16 62 L8 34 Z" fill="#B98A5E" stroke="#7A5B3A" strokeWidth="3" strokeLinejoin="round" /><path d="M120 14 L120 56 M60 34 L180 34" stroke="#7A5B3A" strokeWidth="2.5" /><path d="M104 26 L136 26 L128 42 L112 42 Z" fill="#8A6642" stroke="#7A5B3A" strokeWidth="2" /></svg>
@@ -98,7 +98,7 @@ export function Tribute({ data, name, onBack, onNext, onBuried }: { data: Relati
               </div>
               <div className="tribute curse" onClick={() => { setModal('curse'); onBuried('curse') }}>
                 <div className="ti">📜</div><div className="tt">매운맛 저주 부적</div><div className="tp">화끈한 작별</div>
-                <div className="td">상대 카톡 패턴 맞춤<br />저주 부적 생성</div>
+                <div className="td">🔮 애착유형별 사자성어 부적<br />+ 카톡 패턴 맞춤 저주 한 줄</div>
                 <div className="price">🔥 유료 · 크레딧</div>
               </div>
             </div>
@@ -153,20 +153,32 @@ function FlowerModal({ data, name, onClose }: { data: Relationship; name: string
 
 function CurseModal({ onClose }: { onClose: () => void }) {
   const toast = useToast()
-  const [text, setText] = useState<string | null>(null)
+  const [am, setAm] = useState<Amulet | null>(null)
+  const [busy, setBusy] = useState(false)
   const [flames, setFlames] = useState<number[]>([])
   useEffect(() => { setFlames(Array.from({ length: 12 }, (_, i) => i)) }, [])
   async function burn() {
-    try { const r = await api.curse(); setText(r.text) } catch { setText(CURSES[Math.floor(Math.random() * CURSES.length)]) }
+    setBusy(true)
+    try { setAm(await api.curse()) }
+    catch { setAm({ hanja: '已讀無視\n永劫回歸', reading: '이독무시 영겁회귀', meaning: '읽씹은 돌고 돌아 네게로 돌아오리라', attachment: null, attachment_label: '유형 미상', line: CURSES[Math.floor(Math.random() * CURSES.length)].replace('\n', ' '), text: '' }) }
+    finally { setBusy(false) }
   }
   return (
     <Modal title="📜 매운맛 저주 부적" onClose={onClose}>
-      <p className="tiny muted" style={{ marginBottom: 12 }}>🔥 상대 카톡 패턴을 분석해 맞춤 저주를 생성해요</p>
-      <button className="btn btn-rose btn-block" onClick={burn}>🔥 저주 부적 태우기</button>
-      {text && (
+      <p className="tiny muted" style={{ marginBottom: 12 }}>🔮 애착유형별 사자성어가 부적에 박히고, 상대 카톡 패턴으로 맞춤 저주 한 줄을 덧붙여요</p>
+      <button className="btn btn-rose btn-block" onClick={burn} disabled={busy}>{busy ? '부적 태우는 중…' : '🔥 저주 부적 태우기'}</button>
+      {am && (
         <div style={{ position: 'relative', marginTop: 8 }}>
           <div className="flame-fx">{flames.map(i => <span key={i} style={{ position: 'absolute', left: `${5 + i * 8}%`, bottom: 0, fontSize: 16 + (i % 4) * 4, animation: `flameRise ${1 + (i % 3) * 0.3}s ease-out ${i * 0.08}s infinite` }}>{['🔥', '✨', '🔥'][i % 3]}</span>)}</div>
-          <div className="curse-amulet"><div className="amulet-body"><div className="amulet-sym">🔥📿🔥</div><div className="amulet-text">{text}</div><div style={{ fontSize: 24 }}>☠️</div></div></div>
+          <div className="amulet">
+            <div className="am-head">{am.attachment_label} · X 저주 부적</div>
+            <div className="am-hanja">{am.hanja.split('\n').map((col, i) => <span key={i}>{col}</span>)}</div>
+            <div className="am-read">{am.reading}</div>
+            <div className="am-mean">{am.meaning}</div>
+            <div className="am-line">“{am.line}”</div>
+            <div className="am-seal">封</div>
+          </div>
+          {am.fallback && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>맞춤 한 줄은 데모 문구 (API 키 확인)</div>}
           <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => toast('저주 부적 PNG 저장은 곧 지원 📜')}>🖼️ 부적 PNG로 저장·공유</button>
         </div>
       )}

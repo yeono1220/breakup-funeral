@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, type Msg, type Relationship } from '../api'
-import { MemorialChar } from '../components/Char'
+import { Portrait } from '../components/Portrait'
+import type { Persona } from '../api'
 import { fmtDate, fmtMin, fmtShort, fmtTime } from '../components/ui'
 
 const ATTACH_LABEL: Record<string, string> = { secure: '안정형', anxious: '불안형', avoidant: '회피형', fearful: '혼란형' }
@@ -9,8 +10,8 @@ export function displayName(name: string, alias: boolean) {
   return alias && name.length > 1 ? name[0] + '○'.repeat(Math.min(2, name.length - 1)) : name
 }
 
-export function Diagnosis({ data, persona, alias, onNext }: {
-  data: Relationship; persona: { mbti: string | null; attachment: string | null }; alias: boolean; onNext: () => void
+export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
+  data: Relationship; persona: Persona; alias: boolean; onNext: () => void; onEditContext?: () => void
 }) {
   const t = data.target
   const name = displayName(t, alias)
@@ -18,9 +19,10 @@ export function Diagnosis({ data, persona, alias, onNext }: {
   const [drawn, setDrawn] = useState(false)
   useEffect(() => { const id = setTimeout(() => setDrawn(true), 250); return () => clearTimeout(id) }, [])
 
+  const uc = data.user_context
   const dead = data.stages.lens === 'breakup'
   const last = data.last_message
-  const lastDate = data.range[1]
+  const lastDate = uc?.ended_at ? uc.ended_at + 'T00:00:00' : data.range[1]
   const days = Math.max(1, Math.round((new Date(data.range[1]).getTime() - new Date(data.range[0]).getTime()) / 86400000))
   const weeks = data.weekly
   const valid = weeks.filter(w => w.temp != null) as (typeof weeks[number] & { temp: number })[]
@@ -29,12 +31,13 @@ export function Diagnosis({ data, persona, alias, onNext }: {
 
   // ---- 사망 사유 (규칙 기반)
   const reason = useMemo(() => {
+    if (uc?.ending_label) return `${uc.ending_label}${uc.context ? ` — ${uc.context.slice(0, 60)}${uc.context.length > 60 ? '…' : ''}` : ''}${data.waiting ? ` · 마지막 메시지에 ${data.waiting.age_hours}시간째 무응답` : ''}`
     if (data.waiting) return `${data.waiting.age_hours}시간 읽씹 (평소 ${fmtMin(data.waiting.usual_reply_min)} 안에 답하던 사이)`
     const seg = data.stages.segments[data.stages.segments.length - 1]
     if (seg?.stage === 'cutoff') return `${seg.weeks}주째 대화 단절`
     if (data.temperature.top_factor) return `${data.temperature.top_factor.label} ${data.temperature.top_factor.delta_contrib > 0 ? '상승' : '하락'} 중 (온도 ${data.temperature.temp}°)`
     return `온도 ${data.temperature.temp ?? '–'}°`
-  }, [data])
+  }, [data, uc])
 
   // ---- 사망 원인 % (선톡 / 읽씹 / 대화량)
   const causes = useMemo(() => {
@@ -91,13 +94,14 @@ export function Diagnosis({ data, persona, alias, onNext }: {
         </div>
         <div className="section-gap">
           <div className="memorial">
-            {!dead && <div className="alive-banner">⚠️ 아직 숨이 붙어 있어요 — 현재 단계 <b>{data.stages.current_label}</b>, 온도 {data.temperature.temp ?? '–'}°. 장례는 이르지만 부검 결과는 볼 수 있어요.</div>}
-            <div className="portrait-frame"><div className="portrait-ribbon" /><MemorialChar size={150} /></div>
+            {!dead && <div className="alive-banner">⚠️ 데이터상으론 아직 숨이 붙어 있어요 — 현재 단계 <b>{data.stages.current_label}</b>, 온도 {data.temperature.temp ?? '–'}°. 이미 끝난 관계라면 <a style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={onEditContext}>어떻게 끝났는지 알려주세요</a> — 그걸 우선해요.</div>}
+            {uc?.overrides_stage && <div className="ctx-banner">🕯️ 사용자 진술 기준: <b>{uc.ending_label}</b>{data.stages.data_label ? ` (데이터만 보면 '${data.stages.data_label}' — 회피형처럼 원래 연락이 뜸하면 이렇게 보여요)` : ''}</div>}
+            <div className="portrait-frame"><div className="portrait-ribbon" /><Portrait src={persona.portrait} size={150} /></div>
             <div className="mem-name">故 {name}</div>
             <div className="mem-target">· 대상: {persona.attachment ? ATTACH_LABEL[persona.attachment] + ' ' : ''}{name}{persona.mbti || persona.attachment ? ` (${[persona.mbti, persona.attachment && ATTACH_LABEL[persona.attachment]].filter(Boolean).join('·')})` : ''} · 함께한 {data.n_messages.toLocaleString()}마디</div>
             <div className="mem-death">
               {fmtDate(lastDate)} {last && <span className="q" onClick={() => openReceipt(last.id)} title="원문 보기">“{last.text.slice(0, 40)}”</span>}<br />
-              {last ? '를 끝으로 숨을 거둠' : '마지막 대화'}<br />
+              {last ? (uc?.ended_at ? '를 남기고 떠남' : '를 끝으로 숨을 거둠') : '마지막 대화'}<br />
               <span className="tiny faint">사유: {reason}</span>
             </div>
             <div className="cert">
@@ -162,6 +166,7 @@ export function Diagnosis({ data, persona, alias, onNext }: {
           <div className="card">
             <h3>🧪 부검 소견 · 썸 신호</h3>
             <p className="sub">{data.signals.title} — {data.signals.desc}</p>
+            {data.signals.n_baseline_people === 0 && <div className="ctx-banner">⚠️ 비교할 친구 방이 없어요. "평소의 나" 기준이 없으면 편향·신호 점수가 부풀려져요 — 친구 방 2~3개를 같이 올리면 정확해집니다.</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <SignalCol who="나" score={data.signals.me.score} parts={data.signals.me.parts} color="#D96A5E" />
               <SignalCol who={name} score={data.signals.them.score} parts={data.signals.them.parts} color="#AEB9C4" />
