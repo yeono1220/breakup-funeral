@@ -74,4 +74,4 @@ export type Relationship = {
 export type Compare = { a: string; b: string; rows: Record<string, null | { n_messages: number; temp: number | null; my_reply_min: number | null; their_reply_min: number | null; my_start_share: number | null; my_chars_share: number | null; my_avg_len: number; my_kkk: number; late_night: number }> }
 
 export type Legend = { title: string; source: string; url: string; summary: string; match_points: string[]; similarity: number; hit: string }
-export type Legends = { stories: Legend[]; searched?: boolean; cached?: boolean; fallback?: boolean; reason?: string }
+export type Legends = { stories: Legend[]; searched?: boolean; cached?: boolean; fallback?: boolean; reason?: string; queries?: string[]; basis?: { attachment: string | null; ending: string | null } }

@@ -87,7 +87,13 @@ function Legend({ onClose }: { onClose: () => void }) {
       <p className="tiny muted" style={{ marginBottom: 14 }}>
         {busy ? '네이트판·디시·더쿠를 뒤지는 중… (10~30초)' : shown?.fallback ? `실시간 검색이 안 돼서 예시 썰을 보여드려요${data?.reason ? ` (${data.reason.slice(0, 60)})` : ''}` : `내 카톡 데이터 기준으로 비슷한 실제 썰을 찾았어요${data?.cached ? ' · 캐시' : ''}`}
       </p>
-      {busy && <div className="legend-story"><div className="ls-body muted">🔍 "회피형 잠수 이별 썰", "읽씹 후 잠수" 같은 키워드로 검색 중…</div></div>}
+      {busy && <div className="legend-story"><div className="ls-body muted">🔍 내 데이터(이별 방식 · 상대 애착유형 · 답장 패턴 · 마지막 메시지)로 검색어를 만들어 실제 글을 찾는 중…</div></div>}
+      {!busy && data && !data.fallback && (data.queries?.length || data.basis) && (
+        <div className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.6 }}>
+          {data.basis && <div>근거: {[data.basis.attachment && `상대 ${data.basis.attachment}`, data.basis.ending].filter(Boolean).join(' · ') || '데이터 패턴'}</div>}
+          {data.queries?.length ? <div>검색어: {data.queries.slice(0, 4).map(q => `"${q}"`).join(' · ')}</div> : null}
+        </div>
+      )}
       {!busy && shown?.stories.map((s, i) => (
         <div className="legend-story" key={i}>
           {s.similarity > 0 && <span className="ls-match">🎯 유사도 {s.similarity}%</span>}

@@ -267,16 +267,25 @@ async def legends_for(fun: "Funeral") -> dict:
                   "user_location": {"type": "approximate", "country": "KR", "timezone": "Asia/Seoul"}}]
         messages = [{"role": "user", "content": prompt}]
         text = ""
+        queries: list[str] = []
         for _ in range(4):   # pause_turn(검색이 길어질 때 서버가 중간 정지) 이어받기
             resp = await client.messages.create(model=MODEL, max_tokens=12000, output_config={"effort": "medium"},
                                                 tools=tools, messages=messages)
             text = "".join(blk.text for blk in resp.content if blk.type == "text")
+            for blk in resp.content:   # 실제로 던진 검색어 수집 (직접 호출 + 코드 실행 내부 호출)
+                if blk.type == "server_tool_use":
+                    inp = getattr(blk, "input", {}) or {}
+                    if blk.name == "web_search" and inp.get("query"):
+                        queries.append(str(inp["query"]))
+                    elif blk.name == "code_execution" and inp.get("code"):
+                        queries += re.findall(r'"query"\s*:\s*"([^"]+)"', str(inp["code"]))
             if resp.stop_reason != "pause_turn":
                 break
             messages.append({"role": "assistant", "content": resp.content})
+        queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))
         data = _extract_json(text) or {}
         if not data.get("stories"):
-            return {"stories": [], "fallback": True, "reason": f"parse 실패 (stop={resp.stop_reason}, text={text[-160:]!r})"}
+            return {"stories": [], "fallback": True, "reason": f"parse 실패 (stop={resp.stop_reason}, text={text[-160:]!r})", "queries": queries}
         stories = []
         for s in data.get("stories", [])[:3]:
             url = str(s.get("url", ""))
@@ -286,7 +295,8 @@ async def legends_for(fun: "Funeral") -> dict:
                             "summary": str(s.get("summary", ""))[:300], "match_points": [str(x)[:80] for x in (s.get("match_points") or [])][:3],
                             "similarity": int(s.get("similarity", 0) or 0), "hit": str(s.get("hit", ""))[:120]})
         if not stories:
-            return {"stories": [], "fallback": True, "reason": "검색 결과 없음"}
-        return {"stories": stories, "searched": True}
+            return {"stories": [], "fallback": True, "reason": "검색 결과 없음", "queries": queries}
+        return {"stories": stories, "searched": True, "queries": queries,
+                "basis": {"attachment": ATTACH_KO.get(fun.persona.get("attachment") or "", None), "ending": ENDING_KO.get(fun.persona.get("ending") or "", None)}}
     except Exception as e:  # noqa: BLE001
         return {"stories": [], "fallback": True, "reason": str(e)[:200]}

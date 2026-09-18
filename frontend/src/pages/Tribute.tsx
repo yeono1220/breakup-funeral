@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { api, type Amulet, type Relationship } from '../api'
 import { Portrait } from '../components/Portrait'
+import { BurnRitual } from '../components/BurnRitual'
 import { GrassField } from '../components/GrassField'
 import { Modal, useToast, fmtMin } from '../components/ui'
 
@@ -155,33 +156,35 @@ function CurseModal({ onClose }: { onClose: () => void }) {
   const toast = useToast()
   const [am, setAm] = useState<Amulet | null>(null)
   const [busy, setBusy] = useState(false)
-  const [flames, setFlames] = useState<number[]>([])
-  useEffect(() => { setFlames(Array.from({ length: 12 }, (_, i) => i)) }, [])
+  const [ritual, setRitual] = useState(false)
+  const [shown, setShown] = useState(false)   // 의식 끝난 뒤 모달 안에 부적 남김
   async function burn() {
-    setBusy(true)
+    setRitual(true); setBusy(true); setShown(false)
     try { setAm(await api.curse()) }
     catch { setAm({ hanja: '已讀無視\n永劫回歸', reading: '이독무시 영겁회귀', meaning: '읽씹은 돌고 돌아 네게로 돌아오리라', attachment: null, attachment_label: '유형 미상', line: CURSES[Math.floor(Math.random() * CURSES.length)].replace('\n', ' '), text: '' }) }
     finally { setBusy(false) }
   }
   return (
-    <Modal title="📜 매운맛 저주 부적" onClose={onClose}>
-      <p className="tiny muted" style={{ marginBottom: 12 }}>🔮 애착유형별 사자성어가 부적에 박히고, 상대 카톡 패턴으로 맞춤 저주 한 줄을 덧붙여요</p>
-      <button className="btn btn-rose btn-block" onClick={burn} disabled={busy}>{busy ? '부적 태우는 중…' : '🔥 저주 부적 태우기'}</button>
-      {am && (
-        <div style={{ position: 'relative', marginTop: 8 }}>
-          <div className="flame-fx">{flames.map(i => <span key={i} style={{ position: 'absolute', left: `${5 + i * 8}%`, bottom: 0, fontSize: 16 + (i % 4) * 4, animation: `flameRise ${1 + (i % 3) * 0.3}s ease-out ${i * 0.08}s infinite` }}>{['🔥', '✨', '🔥'][i % 3]}</span>)}</div>
-          <div className="amulet">
-            <div className="am-head">{am.attachment_label} · X 저주 부적</div>
-            <div className="am-hanja">{am.hanja.split('\n').map((col, i) => <span key={i}>{col}</span>)}</div>
-            <div className="am-read">{am.reading}</div>
-            <div className="am-mean">{am.meaning}</div>
-            <div className="am-line">“{am.line}”</div>
-            <div className="am-seal">封</div>
+    <>
+      <Modal title="📜 매운맛 저주 부적" onClose={onClose}>
+        <p className="tiny muted" style={{ marginBottom: 12 }}>🔮 애착유형별 사자성어가 부적에 박히고, 상대 카톡 패턴으로 맞춤 저주 한 줄을 덧붙여요 · 🔊 소리 나요</p>
+        <button className="btn btn-rose btn-block" onClick={burn} disabled={busy}>{busy ? '부적 태우는 중…' : shown ? '🔥 한 번 더 태우기' : '🔥 저주 부적 태우기'}</button>
+        {am && shown && (
+          <div style={{ marginTop: 8 }}>
+            <div className="amulet">
+              <div className="am-head">{am.attachment_label} · X 저주 부적</div>
+              <div className="am-hanja">{am.hanja.split('\n').map((col, i) => <span key={i}>{col}</span>)}</div>
+              <div className="am-read">{am.reading}</div>
+              <div className="am-mean">{am.meaning}</div>
+              <div className="am-line">“{am.line}”</div>
+              <div className="am-seal">封</div>
+            </div>
+            {am.fallback && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>맞춤 한 줄은 데모 문구 (API 키 확인)</div>}
+            <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => toast('저주 부적 PNG 저장은 곧 지원 📜')}>🖼️ 부적 PNG로 저장·공유</button>
           </div>
-          {am.fallback && <div className="tiny muted" style={{ textAlign: 'center', marginTop: 8 }}>맞춤 한 줄은 데모 문구 (API 키 확인)</div>}
-          <button className="btn btn-block" style={{ marginTop: 16 }} onClick={() => toast('저주 부적 PNG 저장은 곧 지원 📜')}>🖼️ 부적 PNG로 저장·공유</button>
-        </div>
-      )}
-    </Modal>
+        )}
+      </Modal>
+      {ritual && <BurnRitual amulet={am} loading={busy} onClose={() => { setRitual(false); setShown(true) }} />}
+    </>
   )
 }
