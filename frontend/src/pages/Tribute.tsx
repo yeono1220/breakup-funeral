@@ -7,7 +7,7 @@ import { Modal, useToast, fmtMin } from '../components/ui'
 
 const CURSES = ['읽씹하던 그 손가락,\n앞으로 오타만 나거라', '너의 모든 소개팅에\n어색한 침묵이 깃들기를', '새 연애 3일 만에\n전 애인 얘기 튀어나와라', '너의 인스타 스토리\n조회수 평생 한 자리수', "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
 
-export function Tribute({ data, name, portrait, onBack, onNext, onBuried }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void }) {
+export function Tribute({ data, name, portrait, onBack, onNext, onBuried, onAmulet }: { data: Relationship; name: string; portrait: string | null; onBack: () => void; onNext: () => void; onBuried: (kind: 'chrys' | 'curse') => void; onAmulet?: (a: Amulet) => void }) {
   const toast = useToast()
   const [lidTop, setLidTop] = useState(-58)
   const [closed, setClosed] = useState(false)
@@ -112,7 +112,7 @@ export function Tribute({ data, name, portrait, onBack, onNext, onBuried }: { da
       </div>
 
       {modal === 'flower' && <FlowerModal data={data} name={name} onClose={() => setModal(null)} />}
-      {modal === 'curse' && <CurseModal onClose={() => setModal(null)} />}
+      {modal === 'curse' && <CurseModal onClose={() => setModal(null)} onAmulet={onAmulet} />}
     </section>
   )
 }
@@ -152,7 +152,7 @@ function FlowerModal({ data, name, onClose }: { data: Relationship; name: string
   )
 }
 
-function CurseModal({ onClose }: { onClose: () => void }) {
+function CurseModal({ onClose, onAmulet }: { onClose: () => void; onAmulet?: (a: Amulet) => void }) {
   const toast = useToast()
   const [am, setAm] = useState<Amulet | null>(null)
   const [busy, setBusy] = useState(false)
@@ -160,7 +160,7 @@ function CurseModal({ onClose }: { onClose: () => void }) {
   const [shown, setShown] = useState(false)   // 의식 끝난 뒤 모달 안에 부적 남김
   async function burn() {
     setRitual(true); setBusy(true); setShown(false)
-    try { setAm(await api.curse()) }
+    try { const a = await api.curse(); setAm(a); onAmulet?.(a) }
     catch { setAm({ hanja: '已讀無視\n永劫回歸', reading: '이독무시 영겁회귀', meaning: '읽씹은 돌고 돌아 네게로 돌아오리라', attachment: null, attachment_label: '유형 미상', line: CURSES[Math.floor(Math.random() * CURSES.length)].replace('\n', ' '), text: '' }) }
     finally { setBusy(false) }
   }

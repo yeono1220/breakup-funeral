@@ -1,5 +1,15 @@
 const BASE = '/api'
 
+/** 로그인 없는 익명 ID (브라우저별 1개). 헌화 중복 방지·내 묘비 식별용. */
+export function anonId(): string {
+  try {
+    let v = localStorage.getItem('funeral.anon')
+    if (!v) { v = 'a_' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); localStorage.setItem('funeral.anon', v) }
+    return v
+  } catch { return 'a_ephemeral_' + Math.random().toString(36).slice(2, 10) }
+}
+const H = () => ({ 'Content-Type': 'application/json', 'X-Anon': anonId() })
+
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return r.json()
@@ -29,6 +39,11 @@ export const api = {
   eulogy: () => fetch(`${BASE}/eulogy`).then(j<{ text: string; fallback?: boolean }>),
   curse: () => fetch(`${BASE}/curse`).then(j<Amulet>),
   lastMessage: () => fetch(`${BASE}/last_message`).then(j<{ message: Msg | null }>),
+  cemetery: () => fetch(`${BASE}/cemetery`, { headers: { 'X-Anon': anonId() } }).then(j<CemeteryData>),
+  bury: (b: { epitaph: string; kind: 'chrys' | 'curse'; days?: number | null; hanja?: string | null }) => fetch(`${BASE}/cemetery`, { method: 'POST', headers: H(), body: JSON.stringify(b) }).then(j<{ id: number; existed: boolean }>),
+  flower: (id: number) => fetch(`${BASE}/cemetery/${id}/flower`, { method: 'POST', headers: H() }).then(j<{ flowers: number; already: boolean }>),
+  comments: (id: number) => fetch(`${BASE}/cemetery/${id}/comments`).then(j<{ comments: Comment[] }>),
+  addComment: (id: number, text: string) => fetch(`${BASE}/cemetery/${id}/comments`, { method: 'POST', headers: H(), body: JSON.stringify({ text }) }).then(j<{ nick: string; text: string }>),
   legends: (refresh = false) => fetch(`${BASE}/legends${refresh ? '?refresh=1' : ''}`).then(j<Legends>),
 }
 
@@ -62,9 +77,9 @@ export type Relationship = {
   symmetry: { bars: { key: string; label: string; me: number; them: number; share: number | null }[]; reply: { my_median_min: number | null; their_median_min: number | null } }
   bias: { reply_speed: { to_target_min: number | null; to_others_min: number | null; times_faster: number | null }; length: { to_target: number; to_others: number; times: number | null }; kkk: { to_target: number; to_others: number; times: number | null }; questions: { times: number | null }; late_night: { with_target: number; with_others: number }; baseline_people: number }
   waiting: { msg_id: number; text: string; ts: string; age_hours: number; reason: string; usual_reply_min: number | null; times_slower: number | null } | null
-  signals: { verdict: 'mutual' | 'me_only' | 'them_only' | 'friends' | 'unknown'; title: string; desc: string; retro?: boolean; me_unmeasurable?: boolean
-    me: { score: number | null; parts: { label: string; score: number; weight: number }[] }
-    them: { score: number | null; parts: { label: string; score: number; weight: number }[] }
+  signals: { verdict: 'mutual' | 'me_only' | 'them_only' | 'friends' | 'unknown' | 'me_more' | 'them_more' | 'balanced'; title: string; desc: string; retro?: boolean; me_unmeasurable?: boolean; mode?: 'baseline' | 'relative'
+    me: { score: number | null; parts: { label: string; score: number; weight: number; note?: string }[] }
+    them: { score: number | null; parts: { label: string; score: number; weight: number; note?: string }[] }
     facts: string[]; n_baseline_people: number; low_confidence: boolean }
   last_message: Msg | null
   causes?: { causes: { key: string; label: string; pct: number; evidence: string }[]; note: string | null
@@ -75,3 +90,7 @@ export type Compare = { a: string; b: string; rows: Record<string, null | { n_me
 
 export type Legend = { title: string; source: string; url: string; summary: string; match_points: string[]; similarity: number; hit: string }
 export type Legends = { stories: Legend[]; searched?: boolean; cached?: boolean; fallback?: boolean; reason?: string; queries?: string[]; basis?: { attachment: string | null; ending: string | null } }
+
+export type Tomb = { id: number; epitaph: string; kind: 'chrys' | 'curse'; days: number | null; hanja: string | null; flowers: number; comments: number; mine: boolean; flowered: boolean; created: string }
+export type CemeteryData = { tombs: Tomb[]; top: Tomb[]; visitors: number }
+export type Comment = { id: number; nick: string; text: string; created: string }

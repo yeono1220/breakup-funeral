@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type Persona, type Relationship } from './api'
+import { api, type Amulet, type Persona, type Relationship } from './api'
 import { ToastProvider, useToast } from './components/ui'
 import { Analyze } from './pages/Analyze'
 import { Cemetery } from './pages/Cemetery'
@@ -22,6 +22,7 @@ function Shell() {
   const [data, setData] = useState<Relationship | null>(null)
   const [persona, setPersona] = useState<Persona>({ mbti: null, attachment: null, note: null })
   const [buriedKind, setBuriedKind] = useState<'chrys' | 'curse'>('chrys')
+  const [amulet, setAmulet] = useState<Amulet | null>(null)
 
   // 이전 세션 복원
   useEffect(() => {
@@ -40,7 +41,15 @@ function Shell() {
   const name = pair ? displayName(pair.target, alias) : ''
   const startIso = data ? (data.user_context?.started_at ? data.user_context.started_at + 'T00:00:00' : data.user_context?.suggested_start ? data.user_context.suggested_start + 'T00:00:00' : data.range[0]) : ''
   const endIso = data ? (data.user_context?.ended_at ? data.user_context.ended_at + 'T00:00:00' : data.range[1]) : ''
-  const epitaph = data?.last_message ? `"${data.last_message.text.slice(0, 30)}" — 향년 ${Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86400000))}일` : null
+  const days = data ? Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86400000)) : null
+  // 비문: 마지막 말이 의미 있으면 인용, 아니면 부적 사자성어 → 이별 사유 → 사망 원인 1위 순
+  const lastText = data?.last_message?.text?.trim() ?? ''
+  const meaningful = lastText.length >= 4 && !/^(사진|이모티콘|동영상)/.test(lastText)
+  const epitaph = !data ? null
+    : meaningful ? `"${lastText.slice(0, 30)}"`
+    : buriedKind === 'curse' && amulet ? `${amulet.hanja.replace(/\n/g, ' ')} — ${amulet.reading}`
+    : data.user_context?.ending_label ? `${data.user_context.ending_label}으로 떠나보냄`
+    : data.causes?.causes?.[0] ? `사인: ${data.causes.causes[0].label}` : `향년 ${days}일`
   const navOn = page === 'cemetery' ? 'cemetery' : page === 'tools' ? 'tools' : 'funeral'
 
   return (
@@ -56,8 +65,8 @@ function Shell() {
       {page === 'upload' && <Upload onStart={start} jumpTo={jump} />}
       {page === 'analyze' && pair && <Analyze target={pair.target} onDone={onDone} onError={onError} />}
       {page === 'diagnosis' && data && <Diagnosis data={data} persona={persona} alias={alias} onNext={() => go('tribute')} onEditContext={() => { setJump('persona'); setPage('upload'); window.scrollTo(0, 0) }} />}
-      {page === 'tribute' && data && <Tribute data={data} name={name} portrait={persona.portrait ?? null} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} />}
-      {page === 'cemetery' && <Cemetery myEpitaph={epitaph} myKind={buriedKind} />}
+      {page === 'tribute' && data && <Tribute data={data} name={name} portrait={persona.portrait ?? null} onBack={() => go('diagnosis')} onNext={() => go('cemetery')} onBuried={setBuriedKind} onAmulet={setAmulet} />}
+      {page === 'cemetery' && <Cemetery myEpitaph={epitaph} myKind={buriedKind} myDays={days} myHanja={amulet ? amulet.hanja.replace(/\n/g, ' ') : null} />}
       {page === 'tools' && <Tools name={name || '그 사람'} />}
     </>
   )

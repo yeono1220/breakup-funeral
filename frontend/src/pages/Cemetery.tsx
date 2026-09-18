@@ -1,38 +1,29 @@
 import { useEffect, useState } from 'react'
+import { api, type CemeteryData, type Comment, type Tomb } from '../api'
 import { Modal, useToast } from '../components/ui'
 
-export type Tomb = { id: number; epitaph: string; kind: 'curse' | 'chrys'; flowers: number; comments: number; mine?: boolean }
-const SEED: Tomb[] = [
-  { id: 108, epitaph: '"바쁘다며 스토리는 1분마다 올리던 그대"', kind: 'curse', flowers: 142, comments: 38 },
-  { id: 109, epitaph: '"읽씹 6시간, 답장은 \'ㅇㅇ\' 두 글자"', kind: 'chrys', flowers: 88, comments: 12 },
-  { id: 110, epitaph: '"나만 좋아했던 것 같은 6개월"', kind: 'curse', flowers: 231, comments: 54 },
-  { id: 111, epitaph: '"먼저 좋다 해놓고 먼저 식은 사람"', kind: 'chrys', flowers: 67, comments: 9 },
-]
-const LS = 'funeral.tombs'
-
-export function loadTombs(): Tomb[] {
-  try { const v = localStorage.getItem(LS); if (v) return JSON.parse(v) } catch {}
-  return SEED
-}
-export function saveTombs(t: Tomb[]) { try { localStorage.setItem(LS, JSON.stringify(t)) } catch {} }
-
-export function Cemetery({ myEpitaph, myKind }: { myEpitaph: string | null; myKind: 'curse' | 'chrys' }) {
+export function Cemetery({ myEpitaph, myKind, myDays, myHanja }: { myEpitaph: string | null; myKind: 'curse' | 'chrys'; myDays: number | null; myHanja: string | null }) {
   const toast = useToast()
-  const [tombs, setTombs] = useState<Tomb[]>(loadTombs)
-  const [guest, setGuest] = useState<number | null>(null)
-  const [hit, setHit] = useState<Set<number>>(new Set())
-  useEffect(() => saveTombs(tombs), [tombs])
+  const [data, setData] = useState<CemeteryData | null>(null)
+  const [guest, setGuest] = useState<Tomb | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const load = () => api.cemetery().then(setData).catch(e => setErr(String(e)))
+  useEffect(() => { load() }, [])
 
-  function hwa(id: number) {
-    if (hit.has(id)) return
-    setTombs(ts => ts.map(t => (t.id === id ? { ...t, flowers: t.flowers + 1 } : t)))
-    setHit(h => new Set(h).add(id)); toast('헌화했어요 💐')
+  async function hwa(t: Tomb) {
+    if (t.flowered) { toast('이미 헌화했어요 🤍'); return }
+    try {
+      const r = await api.flower(t.id)
+      setData(d => d && { ...d, tombs: d.tombs.map(x => x.id === t.id ? { ...x, flowers: r.flowers, flowered: true } : x), top: d.top.map(x => x.id === t.id ? { ...x, flowers: r.flowers } : x) })
+      toast(r.already ? '이미 헌화했어요 🤍' : '헌화했어요 💐')
+    } catch { toast('헌화 실패') }
   }
-  function bury() {
+  async function bury() {
     if (!myEpitaph) { toast('먼저 진단서를 발급받아요'); return }
-    if (tombs.some(t => t.mine && t.epitaph === myEpitaph)) { toast('이미 안치돼 있어요 🪦'); return }
-    const id = Math.max(...tombs.map(t => t.id)) + 1
-    setTombs(ts => [{ id, epitaph: myEpitaph, kind: myKind, flowers: 0, comments: 0, mine: true }, ...ts]); toast('내 관계도 안치됐어요 🪦')
+    try {
+      const r = await api.bury({ epitaph: myEpitaph, kind: myKind, days: myDays, hanja: myKind === 'curse' ? myHanja : null })
+      toast(r.existed ? '이미 안치돼 있어요 🪦' : '내 관계도 안치됐어요 🪦'); load()
+    } catch { toast('안치 실패') }
   }
 
   return (
@@ -40,40 +31,56 @@ export function Cemetery({ myEpitaph, myKind }: { myEpitaph: string | null; myKi
       <div className="wrap">
         <div className="cemetery-head">
           <h2 className="pen" style={{ fontSize: 34, fontWeight: 400 }}>🪦 공동묘지</h2>
-          <div className="live-count"><span className="live-dot" />실시간 조문객 142명</div>
+          <div className="live-count"><span className="live-dot" />조문객 {data?.visitors ?? '…'}명 · 로그인 없이 헌화·방명록</div>
         </div>
-        <p style={{ color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>떠나보낸 관계들이 잠든 곳 · 헌화하고 위로를 남겨요</p>
-        <div className="legend-top">
-          <div className="lt-h">🏆 전설의 묘지 TOP 3</div>
-          {[['3년 연애 후 "우리 잠깐 시간을 갖자" → 잠수', '묘비 #77 · 📜 저주봉인', '💐 2,914', 'r1'], ['청첩장 돌리기 3주 전 파혼', '묘비 #12 · 📜 저주봉인', '💐 2,105', 'r2'], ['200일 선물 주고 그날 밤 환승 발각', '묘비 #203 · 🌼 헌화', '💐 1,888', 'r3']].map(([t, m, s, r], i) => (
-            <div className="legend-row" key={i}><div className={'legend-rank ' + r}>{i + 1}</div><div className="legend-body"><div className="lb-t">{t}</div><div className="lb-m">{m}</div></div><div className="legend-stat">{s}</div></div>
-          ))}
-        </div>
-        <div className="tomb-grid">
-          {tombs.map(t => (
-            <div className={'tomb' + (t.mine ? ' mine' : '')} key={t.id}>
-              <div className="tomb-top"><span className="tomb-icon">🪦</span><span className="tomb-id">묘비 #{t.id}{t.mine ? ' · 내 관계' : ''}</span><span className={'tomb-badge ' + t.kind}>{t.kind === 'curse' ? '📜 저주봉인' : '🌼 헌화'}</span></div>
-              <div className="tomb-epitaph">{t.epitaph}</div>
-              <div className="tomb-meta"><span className={hit.has(t.id) ? 'hit' : ''} onClick={() => hwa(t.id)}>💐 <b>{t.flowers}</b></span><span onClick={() => setGuest(t.id)}>💬 {t.comments}</span></div>
+        <p style={{ color: 'var(--text-soft)', fontSize: 14, marginBottom: 20 }}>떠나보낸 관계들이 잠든 곳 · 헌화는 묘비당 한 번, 방명록은 익명</p>
+        {err && <div className="ctx-banner">공동묘지 서버에 연결 못 했어요 ({err.slice(0, 60)})</div>}
+        {data && (
+          <>
+            <div className="legend-top">
+              <div className="lt-h">🏆 전설의 묘지 TOP 3</div>
+              {data.top.map((t, i) => (
+                <div className="legend-row" key={t.id}><div className={'legend-rank r' + (i + 1)}>{i + 1}</div><div className="legend-body"><div className="lb-t">{t.epitaph}</div><div className="lb-m">묘비 #{t.id} · {t.kind === 'curse' ? `📜 저주봉인${t.hanja ? ` · ${t.hanja}` : ''}` : '🌼 헌화'}{t.days ? ` · 향년 ${t.days}일` : ''}</div></div><div className="legend-stat">💐 {t.flowers.toLocaleString()}</div></div>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="tomb-grid">
+              {data.tombs.map(t => (
+                <div className={'tomb' + (t.mine ? ' mine' : '')} key={t.id}>
+                  <div className="tomb-top"><span className="tomb-icon">🪦</span><span className="tomb-id">묘비 #{t.id}{t.mine ? ' · 내 관계' : ''}{t.days ? ` · 향년 ${t.days}일` : ''}</span><span className={'tomb-badge ' + t.kind}>{t.kind === 'curse' ? '📜 저주봉인' : '🌼 헌화'}</span></div>
+                  <div className="tomb-epitaph">{t.epitaph}</div>
+                  {t.hanja && <div className="tiny" style={{ color: '#E8CE9E', marginTop: -6, marginBottom: 8 }}>符 {t.hanja}</div>}
+                  <div className="tomb-meta"><span className={t.flowered ? 'hit' : ''} onClick={() => hwa(t)}>💐 <b>{t.flowers.toLocaleString()}</b></span><span onClick={() => setGuest(t)}>💬 {t.comments}</span></div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         <button className="btn btn-block" style={{ marginTop: 18 }} onClick={bury}>＋ 내 관계 여기 안치하기</button>
+        <div className="tiny faint" style={{ marginTop: 8, textAlign: 'center' }}>지금은 이 컴퓨터의 서버에 저장돼요. 배포하면 모두가 같은 묘지를 봐요.</div>
       </div>
-      {guest != null && <GuestModal onClose={() => setGuest(null)} />}
+      {guest && <GuestModal tomb={guest} onClose={() => { setGuest(null); load() }} />}
     </section>
   )
 }
 
-function GuestModal({ onClose }: { onClose: () => void }) {
+function GuestModal({ tomb, onClose }: { tomb: Tomb; onClose: () => void }) {
   const toast = useToast()
-  const [items, setItems] = useState([['익명의 조문객', '저도 똑같이 당했어요… 힘내세요 🥺'], ['익명의 조문객', '읽씹은 답장이 맞습니다. 잘 보내주세요'], ['익명의 조문객', '당신의 앞날을 빕니다 🙏']])
+  const [items, setItems] = useState<Comment[]>([])
   const [v, setV] = useState('')
-  const add = () => { if (!v.trim()) return; setItems([['나', v], ...items]); setV(''); toast('위로를 남겼어요 🤍') }
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api.comments(tomb.id).then(r => setItems(r.comments)).catch(() => {}) }, [tomb.id])
+  const add = async () => {
+    if (!v.trim() || busy) return
+    setBusy(true)
+    try { const r = await api.addComment(tomb.id, v); setItems([{ id: Date.now(), nick: r.nick + ' (나)', text: r.text, created: '' }, ...items]); setV(''); toast('위로를 남겼어요 🤍') }
+    catch { toast('등록 실패') } finally { setBusy(false) }
+  }
   return (
-    <Modal title="💬 조문 방명록" onClose={onClose}>
-      {items.map(([n, t], i) => <div className="guestbook" key={i}><div className="gb-name">{n}</div><div className="gb-text">{t}</div></div>)}
-      <div className="summon-in" style={{ marginTop: 12 }}><input value={v} onChange={e => setV(e.target.value)} placeholder="위로 한마디 남기기…" onKeyDown={e => e.key === 'Enter' && add()} /><button onClick={add}>↑</button></div>
+    <Modal title={`💬 조문 방명록 · 묘비 #${tomb.id}`} onClose={onClose}>
+      <div className="tomb-epitaph" style={{ minHeight: 0, marginBottom: 12 }}>{tomb.epitaph}</div>
+      {items.length === 0 && <div className="muted tiny" style={{ marginBottom: 8 }}>첫 조문객이 되어주세요.</div>}
+      {items.map(c => <div className="guestbook" key={c.id}><div className="gb-name">{c.nick}</div><div className="gb-text">{c.text}</div></div>)}
+      <div className="summon-in" style={{ marginTop: 12 }}><input value={v} onChange={e => setV(e.target.value)} placeholder="위로 한마디 남기기… (익명)" onKeyDown={e => e.key === 'Enter' && add()} /><button onClick={add} disabled={busy}>↑</button></div>
     </Modal>
   )
 }

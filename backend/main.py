@@ -13,6 +13,8 @@ from pydantic import BaseModel
 
 import db
 import relationship
+import cemetery
+from fastapi import Header
 from core.causes import diagnose as diagnose_causes
 from core.signals import retro as retro_signals
 from core.sessions import relationship_messages as _rel_msgs
@@ -176,7 +178,11 @@ async def relationship_view(person: str):
         raise HTTPException(400, "me not set")
     if person == me:
         raise HTTPException(400, "상대가 나 자신이에요. 다른 사람을 골라주세요.")
-    r = relationship.build(db.all_messages(con), me, person, db.now_ts(con))
+    all_msgs = db.all_messages(con)
+    rel_check = _rel_msgs(all_msgs, me, person)
+    if sum(1 for x in rel_check if x.sender == me) < 5:
+        raise HTTPException(400, f"{person}와(과) 주고받은 1:1 대화가 거의 없어요 (단톡에서만 등장). 1:1 대화방 txt를 올리거나 다른 사람을 골라주세요.")
+    r = relationship.build(all_msgs, me, person, db.now_ts(con))
     p = _persona_of(con, person)
     ending = p.get("ending")
     # 사용자가 알려준 이별 컨텍스트가 데이터 판정을 덮어쓴다 (회피형 X = 데이터상 '썸'으로 보이는 경우 등)
@@ -185,8 +191,7 @@ async def relationship_view(person: str):
     r["user_context"] = {"ending": ending, "ending_label": ENDING_LABEL.get(ending), "context": p.get("context"),
                          "ended_at": p.get("ended_at"), "started_at": p.get("started_at"), "suggested_start": first_warm,
                          "overrides_stage": ending in ENDED}
-    all_msgs = db.all_messages(con)
-    r["causes"] = diagnose_causes(_rel_msgs(all_msgs, me, person), me, person, db.now_ts(con), r["user_context"])
+    r["causes"] = diagnose_causes(rel_check, me, person, db.now_ts(con), r["user_context"])
     if ending in ENDED:
         r["stages"]["data_lens"] = r["stages"]["lens"]
         r["stages"]["data_label"] = r["stages"]["current_label"]
@@ -337,6 +342,52 @@ async def legends(refresh: bool = False):
     if out.get("stories"):
         db.set_setting(con, key, json.dumps(out, ensure_ascii=False))
     return out
+
+
+# ---------------------------------------------------------------- 공동묘지 (익명, 로그인 없음)
+class BuryBody(BaseModel):
+    epitaph: str
+    kind: str = "chrys"
+    days: int | None = None
+    hanja: str | None = None
+
+
+class CommentBody(BaseModel):
+    text: str
+
+
+def _anon(x_anon: str | None) -> str:
+    if not x_anon or len(x_anon) < 6 or len(x_anon) > 64:
+        raise HTTPException(400, "X-Anon 헤더(브라우저 익명 ID)가 필요해요")
+    return x_anon
+
+
+@app.get("/cemetery")
+async def cemetery_list(x_anon: str | None = Header(default=None)):
+    return cemetery.list_tombs(_con(), x_anon)
+
+
+@app.post("/cemetery")
+async def cemetery_bury(body: BuryBody, x_anon: str | None = Header(default=None)):
+    return cemetery.bury(_con(), _anon(x_anon), body.epitaph, body.kind, body.days, body.hanja)
+
+
+@app.post("/cemetery/{tomb_id}/flower")
+async def cemetery_flower(tomb_id: int, x_anon: str | None = Header(default=None)):
+    return cemetery.flower(_con(), tomb_id, _anon(x_anon))
+
+
+@app.get("/cemetery/{tomb_id}/comments")
+async def cemetery_comments(tomb_id: int):
+    return {"comments": cemetery.comments(_con(), tomb_id)}
+
+
+@app.post("/cemetery/{tomb_id}/comments")
+async def cemetery_comment(tomb_id: int, body: CommentBody, x_anon: str | None = Header(default=None)):
+    try:
+        return cemetery.add_comment(_con(), tomb_id, _anon(x_anon), body.text)
+    except ValueError:
+        raise HTTPException(400, "내용이 비었어요")
 
 
 @app.get("/last_message")

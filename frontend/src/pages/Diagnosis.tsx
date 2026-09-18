@@ -181,9 +181,9 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
           <div className="card">
             <h3>🧪 부검 소견 · {dead ? '이별 신호' : '썸 신호'}</h3>
             <p className="sub"><b style={{ color: 'var(--text)' }}>{data.signals.title}</b> — {data.signals.desc}</p>
-            {(data.signals.n_baseline_people === 0 || data.signals.me_unmeasurable) && <div className="ctx-banner">⚠️ 비교할 1:1 친구 방이 없어 <b>내 쪽 신호</b>는 계산할 수 없어요. "평소의 나" 기준이 있어야 이 사람한테만 다르게 굴었는지 알 수 있어요 — 친구 방 2~3개(1:1)를 같이 올려주세요.</div>}
+            <div className="tiny faint" style={{ marginBottom: 10 }}>{data.signals.mode === 'relative' ? '기준: 둘 사이의 상대 비교 (합이 100) — 친구 방을 더 올리면 "평소의 나" 대비로도 볼 수 있어요' : `기준: 내 다른 대화 ${data.signals.n_baseline_people}명 대비`}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <SignalCol who="나" score={data.signals.me.score} parts={data.signals.me.parts} color="#D96A5E" empty={data.signals.me_unmeasurable ? '계산 불가 (비교 기준 없음)' : undefined} />
+              <SignalCol who="나" score={data.signals.me.score} parts={data.signals.me.parts} color="#D96A5E" />
               <SignalCol who={name} score={data.signals.them.score} parts={data.signals.them.parts} color="#AEB9C4" />
             </div>
             <ul style={{ marginTop: 12, paddingLeft: 18, fontSize: 13 }} className="muted">{data.signals.facts.map((f, i) => <li key={i}>{f.replace(t, name)}</li>)}</ul>

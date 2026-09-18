@@ -14,7 +14,10 @@ VERDICTS = {
     "me_only": ("내 쪽만 뜨거움", "너는 이 사람한테만 다르게 구는데, 상대 쪽 신호는 평소 친구 수준이야."),
     "them_only": ("상대가 더 적극적", "상대 쪽 신호가 세고 너는 평소대로야. 눈치 못 채고 있는 거 아냐?"),
     "friends": ("아직 친구 모양", "양쪽 다 평소 친구들이랑 비슷해. 아직은 친구 모양."),
-    "unknown": ("판정 보류", "비교할 1:1 친구 방이 없어서 내 쪽 신호를 못 쟀어. 친구 방 2~3개를 올리면 판정돼."),
+    "unknown": ("판정 보류", "비교할 데이터가 부족해."),
+    "me_more": ("내가 더 움직인 관계", "답장·선톡·질문에서 네가 상대보다 더 많이 움직이고 있어. 기울어진 모양이야."),
+    "them_more": ("상대가 더 움직인 관계", "상대가 너보다 더 빨리 답하고 더 먼저 걸어. 네가 받는 쪽이야."),
+    "balanced": ("균형 잡힌 관계", "답장 속도·선톡·질문·분량이 둘 다 비슷해. 무게가 한쪽으로 안 쏠린 모양."),
 }
 # 이별 렌즈: 같은 판정을 회고형으로
 VERDICTS_RETRO = {
@@ -22,7 +25,10 @@ VERDICTS_RETRO = {
     "me_only": ("내 쪽이 더 뜨거웠어", "너는 이 사람한테만 다르게 굴었고, 상대 쪽 신호는 친구 수준이었어. 온도 차가 있던 관계."),
     "them_only": ("상대가 더 적극적이었어", "상대 쪽 신호가 세고 너는 평소대로였어. 상대는 네가 좀 더 적극적이길 바랐을 수도 있어."),
     "friends": ("친구 모양이었어", "양쪽 다 평소 친구들이랑 비슷했어. 애초에 관계의 모양이 연인은 아니었을 수도."),
-    "unknown": ("판정 보류", "비교할 1:1 친구 방이 없어서 내 쪽 신호를 못 쟀어. 친구 방 2~3개를 올리면 판정돼."),
+    "unknown": ("판정 보류", "비교할 데이터가 부족해."),
+    "me_more": ("내가 더 움직였던 관계", "답장·선톡·질문에서 네가 상대보다 더 많이 움직였어. 끝까지 네가 끌고 간 모양이야."),
+    "them_more": ("상대가 더 움직였던 관계", "상대가 너보다 더 빨리 답하고 더 먼저 걸었어. 상대는 네가 좀 더 적극적이길 바랐을 수도 있어."),
+    "balanced": ("균형은 맞았던 관계", "답장 속도·선톡·질문·분량이 둘 다 비슷했어. 무게가 기울어서 끝난 건 아니야."),
 }
 
 
@@ -110,9 +116,9 @@ def signals(all_msgs: list[Message], rel_msgs: list[Message], me: str, target: s
     ]
     them_score, them_used = _avg(them_parts)
 
-    # 내 쪽은 baseline(다른 방) 없이는 잴 수 없다 — 항목 2개 미만이면 판정 보류
-    if len(me_used) < 2:
-        me_score, me_used = None, []
+    # baseline(내 다른 방)이 부족하면 → 둘 사이의 상대 비교 모드
+    if len(me_used) < 2 or len(others) < 100:
+        return _relative(rel_msgs, me, target, mine_rel, them_rel, g_rel, sessions, s_me_rel, s_th_rel)
     if me_score is None or them_score is None:
         key = "unknown" if me_score is None else "friends"
     elif me_score >= 55 and them_score >= 55:
@@ -145,5 +151,57 @@ def signals(all_msgs: list[Message], rel_msgs: list[Message], me: str, target: s
         "facts": facts[:4],
         "n_baseline_people": len({m.sender for m in others if m.sender != me}),
         "low_confidence": len(rel_msgs) < 200 or len(others) < 100,
-        "me_unmeasurable": me_score is None,
+        "me_unmeasurable": False, "mode": "baseline",
     }
+
+
+def _share(a: float | None, b: float | None) -> float | None:
+    if a is None or b is None or (a + b) <= 0:
+        return None
+    return a / (a + b)
+
+
+def _relative(rel_msgs, me, target, mine_rel, them_rel, g_rel, sessions, s_me, s_th) -> dict:
+    """둘 사이의 상대 비교: 각 축에서 '나의 몫'(0~1). 0.5가 균형."""
+    my_med = med(g_rel["me"]); their_med = med(g_rel["them"])
+    my_start = (sum(1 for x in sessions if x.starter == me) / len(sessions)) if sessions else None
+    axes = [
+        ("답장 속도", _share(1 / max(my_med, 0.5), 1 / max(their_med, 0.5)) if my_med is not None and their_med is not None else None, 0.3,
+         f"나 {_fm(my_med)} · 상대 {_fm(their_med)}"),
+        ("먼저 말 걸기", my_start, 0.25, f"내가 먼저 {my_start*100:.0f}%" if my_start is not None else ""),
+        ("질문", _share(s_me["q"], s_th["q"]), 0.15, f"나 {s_me['q']*100:.0f}% · 상대 {s_th['q']*100:.0f}%"),
+        ("분량", _share(s_me["len"] * max(1, len(mine_rel)), s_th["len"] * max(1, len(them_rel))), 0.15,
+         f"나 {s_me['len']*len(mine_rel):,.0f}자 · 상대 {s_th['len']*len(them_rel):,.0f}자"),
+        ("ㅋㅋ·이모지", _share(s_me["kkk"] + s_me["emoji"], s_th["kkk"] + s_th["emoji"]), 0.15, ""),
+    ]
+    used = [(l, v, w, e) for l, v, w, e in axes if v is not None]
+    if not used:
+        title, desc = VERDICTS["unknown"]
+        return {"verdict": "unknown", "title": title, "desc": desc, "me": {"score": None, "parts": []}, "them": {"score": None, "parts": []},
+                "facts": [], "n_baseline_people": 0, "low_confidence": True, "me_unmeasurable": False, "mode": "relative"}
+    wsum = sum(w for _, _, w, _ in used)
+    me_score = round(100 * sum(v * w for _, v, w, _ in used) / wsum)
+    them_score = 100 - me_score
+    me_parts = [{"label": l, "score": round(100 * v), "weight": round(w / wsum, 2), "note": e} for l, v, w, e in used]
+    them_parts = [{"label": l, "score": round(100 * (1 - v)), "weight": round(w / wsum, 2), "note": e} for l, v, w, e in used]
+    key = "me_more" if me_score >= 58 else ("them_more" if me_score <= 42 else "balanced")
+    title, desc = VERDICTS[key]
+    facts = []
+    if my_med is not None and their_med is not None:
+        facts.append(f"너는 {_fm(my_med)}, 상대는 {_fm(their_med)} 안에 답했어")
+    if my_start is not None:
+        facts.append(f"대화의 {my_start*100:.0f}%는 네가 먼저 걸었어")
+    facts.append(f"질문은 너 {s_me['q']*100:.0f}% · 상대 {s_th['q']*100:.0f}%")
+    late_me, late_th = s_me["late"], s_th["late"]
+    if late_me + late_th > 0.02:
+        facts.append(f"새벽(1~5시) 대화 비중 너 {late_me*100:.0f}% · 상대 {late_th*100:.0f}%")
+    return {"verdict": key, "title": title, "desc": desc, "me": {"score": me_score, "parts": me_parts}, "them": {"score": them_score, "parts": them_parts},
+            "facts": facts[:4], "n_baseline_people": 0, "low_confidence": len(rel_msgs) < 200, "me_unmeasurable": False, "mode": "relative"}
+
+
+def _fm(m: float | None) -> str:
+    if m is None:
+        return "–"
+    if m < 1:
+        return "1분 이내"
+    return f"{m:.0f}분" if m < 60 else (f"{m/60:.1f}시간" if m < 1440 else f"{m/1440:.1f}일")
