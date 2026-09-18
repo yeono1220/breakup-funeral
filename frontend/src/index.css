@@ -64,7 +64,7 @@ input,textarea{font-family:inherit;}
 .up .wrap{padding-top:44px;text-align:center;}
 .up-logo{font-family:'Nanum Pen Script';font-size:60px;color:var(--text);line-height:1;}
 .up-tag{font-size:16px;color:var(--text-soft);line-height:1.7;margin-top:12px;}
-.up-char{margin:24px auto;animation:bob 3.6s ease-in-out infinite;width:150px;}
+.up-char{margin:24px auto;animation:bob 3.6s ease-in-out infinite;width:160px;display:flex;justify-content:center;}
 .dropzone{max-width:520px;margin:0 auto;border:2px dashed var(--rose-deep);border-radius:20px;padding:38px;background:rgba(217,106,94,.05);cursor:pointer;transition:.2s;display:block;}
 .dropzone:hover,.dropzone.on{background:rgba(217,106,94,.1);transform:translateY(-2px);}
 .dropzone p{margin-top:12px;font-size:16px;color:var(--text);}
@@ -96,7 +96,7 @@ input,textarea{font-family:inherit;}
 /* memorial */
 .memorial{background:linear-gradient(180deg,#1C2028,#252A34);border:1.5px solid var(--line);border-radius:22px;padding:30px;text-align:center;position:relative;overflow:hidden;}
 .alive-banner{background:rgba(143,184,160,.12);border:1.5px solid var(--ok);border-radius:14px;padding:12px 16px;font-size:13px;color:var(--ok);margin-bottom:18px;line-height:1.5;}
-.portrait-frame{width:190px;margin:0 auto;background:#161A21;border:7px solid #0D0F14;border-radius:8px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.5);position:relative;}
+.portrait-frame{width:200px;margin:0 auto;background:#161A21;border:7px solid #0D0F14;border-radius:8px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.5);position:relative;}
 .portrait-ribbon{position:absolute;top:-7px;left:-7px;right:-7px;height:0;}
 .portrait-ribbon::before,.portrait-ribbon::after{content:'';position:absolute;top:0;width:20px;height:72px;background:#0D0F14;}
 .portrait-ribbon::before{left:16px;transform:rotate(35deg);}

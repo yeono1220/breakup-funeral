@@ -61,7 +61,7 @@ export function Upload({ onStart }: { onStart: (me: string, target: string) => v
       <div className="wrap wrap-narrow">
         <div className="up-logo">이별, 잘 보내드립니다</div>
         <div className="up-tag">카톡을 올리면 이 관계의 사망 진단서를 발급해드려요.<br />애도하고, 저주하고, 떠나보내세요.</div>
-        <div className="up-char"><Char mood="sad" size={150} /></div>
+        <div className="up-char"><Char mood="smile" size={190} /></div>
 
         {step === 'drop' && (
           <>

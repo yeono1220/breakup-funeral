@@ -25,7 +25,7 @@ export function Analyze({ target, onDone, onError }: { target: string; onDone: (
   return (
     <section className="page an">
       <div className="wrap wrap-narrow">
-        <div className="up-char" style={{ marginBottom: 8, width: 110 }}><Char mood="sad" size={110} /></div>
+        <div className="up-char" style={{ marginBottom: 8, width: 120 }}><Char mood="sad" size={150} /></div>
         <div className="up-logo" style={{ fontSize: 34 }}>부검 중입니다…</div>
         <div className="log-box">
           {LINES.map(([ic, t], k) => (
