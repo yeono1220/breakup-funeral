@@ -38,7 +38,9 @@ function Shell() {
 
   const alias = persona.alias ?? persona.note === 'alias'
   const name = pair ? displayName(pair.target, alias) : ''
-  const epitaph = data?.last_message ? `"${data.last_message.text.slice(0, 30)}" — 향년 ${Math.max(1, Math.round((new Date(data.range[1]).getTime() - new Date(data.range[0]).getTime()) / 86400000))}일` : null
+  const startIso = data ? (data.user_context?.started_at ? data.user_context.started_at + 'T00:00:00' : data.user_context?.suggested_start ? data.user_context.suggested_start + 'T00:00:00' : data.range[0]) : ''
+  const endIso = data ? (data.user_context?.ended_at ? data.user_context.ended_at + 'T00:00:00' : data.range[1]) : ''
+  const epitaph = data?.last_message ? `"${data.last_message.text.slice(0, 30)}" — 향년 ${Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86400000))}일` : null
   const navOn = page === 'cemetery' ? 'cemetery' : page === 'tools' ? 'tools' : 'funeral'
 
   return (

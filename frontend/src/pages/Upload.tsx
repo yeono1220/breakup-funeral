@@ -36,6 +36,7 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
   const [ending, setEnding] = useState<Ending | null>(null)
   const [context, setContext] = useState('')
   const [endedAt, setEndedAt] = useState('')
+  const [startedAt, setStartedAt] = useState('')
   const [portrait, setPortrait] = useState<string | null>(null)
 
   useEffect(() => {
@@ -64,13 +65,13 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
   async function pickTarget(name: string) {
     setTarget(name); await api.setTarget(name)
     const p = await api.persona(name).catch(() => null)
-    if (p) { setMbti(p.mbti); setAttach(p.attachment); setEnding(p.ending ?? null); setContext(p.context ?? ''); setEndedAt(p.ended_at ?? ''); setAlias(p.alias ?? true); setPortrait(p.portrait ?? null) }
+    if (p) { setMbti(p.mbti); setAttach(p.attachment); setEnding(p.ending ?? null); setContext(p.context ?? ''); setEndedAt(p.ended_at ?? ''); setStartedAt(p.started_at ?? ''); setAlias(p.alias ?? true); setPortrait(p.portrait ?? null) }
     setStep('persona')
   }
 
   async function savePersona() {
     if (!target) return
-    await api.setPersona({ person: target, mbti, attachment: attach, ending, context: context || null, ended_at: endedAt || null, alias, portrait: portrait ?? undefined })
+    await api.setPersona({ person: target, mbti, attachment: attach, ending, context: context || null, ended_at: endedAt || null, started_at: startedAt || null, alias, portrait: portrait ?? undefined })
   }
   async function toPortrait() { await savePersona(); setStep('portrait') }
   async function finish() {
@@ -160,8 +161,13 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
             </div>
             <div className="field-label">상황 설명 <span className="faint">(선택) — 회피형이라 데이터만 보면 썸처럼 보이는 경우 등, 코치·소환술·진단서가 이 맥락을 씁니다</span></div>
             <textarea className="ctx" value={context} onChange={e => setContext(e.target.value)} placeholder="예: 3주 전에 '나중에 연락할게' 하고 잠수. 원래 연락 뜸한 회피형이라 데이터로는 안 끝난 것처럼 보임" />
-            <div className="field-label">헤어진 날 <span className="faint">(선택)</span></div>
-            <input className="date" type="date" value={endedAt} onChange={e => setEndedAt(e.target.value)} />
+            <div className="field-label">썸(관계) 시작일 · 헤어진 날 <span className="faint">(선택) — 향년은 이 사이로 계산해요. 카톡은 사귀기 전부터 했을 수 있으니까</span></div>
+            <div className="row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input className="date" type="date" value={startedAt} onChange={e => setStartedAt(e.target.value)} title="썸 시작일" />
+              <span className="faint" style={{ alignSelf: 'center' }}>~</span>
+              <input className="date" type="date" value={endedAt} onChange={e => setEndedAt(e.target.value)} title="헤어진 날" />
+            </div>
+            <div className="tiny faint" style={{ marginTop: 6 }}>비워두면 데이터가 감지한 첫 썸/연애 구간부터 계산해요. 진단서에서 나중에 바꿀 수도 있어요.</div>
             <div style={{ margin: '16px 0 6px' }}>
               <label className="toggle"><input type="checkbox" checked={alias} onChange={e => setAlias(e.target.checked)} /> 상대 이름을 가명으로 표시</label>
             </div>

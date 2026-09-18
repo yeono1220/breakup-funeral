@@ -116,6 +116,7 @@ class PersonaBody(BaseModel):
     ending: str | None = None        # ghosted | dumped | dumper | faded | mutual | ongoing | None
     context: str | None = None       # 어떻게 끝났는지 자유 서술
     ended_at: str | None = None      # YYYY-MM-DD (선택)
+    started_at: str | None = None    # YYYY-MM-DD 썸/관계 시작일 (선택) — 향년 계산 기준
     alias: bool = True               # 화면에서 가명 표시
     portrait: str | None = None      # data URL (사용자가 그린/올린 X 얼굴)
     note: str | None = None          # (구버전 호환)
@@ -147,7 +148,7 @@ async def set_persona(body: PersonaBody):
 async def get_persona(person: str):
     p = _persona_of(_con(), person)
     return {"person": person, "mbti": p.get("mbti"), "attachment": p.get("attachment"), "ending": p.get("ending"),
-            "context": p.get("context"), "ended_at": p.get("ended_at"), "alias": p.get("alias", True),
+            "context": p.get("context"), "ended_at": p.get("ended_at"), "started_at": p.get("started_at"), "alias": p.get("alias", True),
             "portrait": p.get("portrait"), "ending_label": ENDING_LABEL.get(p.get("ending"))}
 
 
@@ -171,8 +172,11 @@ async def relationship_view(person: str):
     p = _persona_of(con, person)
     ending = p.get("ending")
     # 사용자가 알려준 이별 컨텍스트가 데이터 판정을 덮어쓴다 (회피형 X = 데이터상 '썸'으로 보이는 경우 등)
+    # 향년 시작점: 사용자가 찍은 시작일 > 데이터의 첫 썸/연애 구간 시작 > 첫 메시지
+    first_warm = next((sg["start"] for sg in r["stages"]["segments"] if sg["stage"] in ("some", "dating")), None)
     r["user_context"] = {"ending": ending, "ending_label": ENDING_LABEL.get(ending), "context": p.get("context"),
-                         "ended_at": p.get("ended_at"), "overrides_stage": ending in ENDED}
+                         "ended_at": p.get("ended_at"), "started_at": p.get("started_at"), "suggested_start": first_warm,
+                         "overrides_stage": ending in ENDED}
     if ending in ENDED:
         r["stages"]["data_lens"] = r["stages"]["lens"]
         r["stages"]["data_label"] = r["stages"]["current_label"]

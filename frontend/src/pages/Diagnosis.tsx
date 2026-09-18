@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+const useS = useState
 import { api, type Msg, type Relationship } from '../api'
 import { Portrait } from '../components/Portrait'
 import type { Persona } from '../api'
@@ -23,7 +24,12 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
   const dead = data.stages.lens === 'breakup'
   const last = data.last_message
   const lastDate = uc?.ended_at ? uc.ended_at + 'T00:00:00' : data.range[1]
-  const days = Math.max(1, Math.round((new Date(data.range[1]).getTime() - new Date(data.range[0]).getTime()) / 86400000))
+  const [startedAt, setStartedAt] = useS<string | null>(uc?.started_at ?? null)
+  const [editStart, setEditStart] = useS(false)
+  const startIso = startedAt ? startedAt + 'T00:00:00' : (uc?.suggested_start ? uc.suggested_start + 'T00:00:00' : data.range[0])
+  const days = Math.max(1, Math.round((new Date(lastDate).getTime() - new Date(startIso).getTime()) / 86400000))
+  const knownBefore = Math.round((new Date(startIso).getTime() - new Date(data.range[0]).getTime()) / 86400000)
+  const saveStart = async (v: string) => { setStartedAt(v || null); setEditStart(false); await api.setPersona({ person: t, mbti: persona.mbti, attachment: persona.attachment, ending: persona.ending ?? null, context: persona.context ?? null, ended_at: persona.ended_at ?? null, started_at: v || null, alias }) }
   const weeks = data.weekly
   const valid = weeks.filter(w => w.temp != null) as (typeof weeks[number] & { temp: number })[]
   const peak = valid.reduce((a, b) => (b.temp > a.temp ? b : a), valid[0])
@@ -142,7 +148,15 @@ export function Diagnosis({ data, persona, alias, onNext, onEditContext }: {
               {peak && <div className="ff-annot ok" style={{ left: `min(78%, ${xOf(peak.week_start)}%)`, top: `${Math.max(2, yOf(peak.temp) - 14)}%` }}>💚 골든타임 {peak.temp}°</div>}
               {lastValid && <div className="ff-annot" style={{ right: '2%', top: `${Math.min(80, yOf(lastValid.temp) + 4)}%` }}>{dead ? '💀' : '🩺'} {lastValid.temp}°</div>}
             </div>
-            <div className="ff-legend"><span>💚 최고점 {peak?.temp ?? '–'}°</span><span>{dead ? '💀 사망' : '🩺 마지막'} {fmtShort(lastDate)}</span><span>⏳ 향년 {days}일</span><span>💬 {data.n_messages.toLocaleString()}마디</span></div>
+            <div className="ff-legend"><span>💚 최고점 {peak?.temp ?? '–'}°</span><span>{dead ? '💀 사망' : '🩺 마지막'} {fmtShort(lastDate)}</span><span title="썸/관계 시작일부터 계산">⏳ 향년 {days}일 {knownBefore > 7 && <span className="faint">(카톡은 {knownBefore}일 전부터)</span>} <a style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={() => setEditStart(v => !v)}>시작일</a></span><span>💬 {data.n_messages.toLocaleString()}마디</span></div>
+            {editStart && (
+              <div className="row" style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+                <span className="tiny muted">썸/관계 시작일</span>
+                <input className="date" type="date" defaultValue={startedAt ?? uc?.suggested_start ?? data.range[0].slice(0, 10)} onChange={e => saveStart(e.target.value)} />
+                {uc?.suggested_start && <button className="btn btn-sm" onClick={() => saveStart(uc.suggested_start!)}>데이터 추천: {fmtShort(uc.suggested_start)}</button>}
+                <button className="btn btn-sm" onClick={() => saveStart('')}>첫 카톡부터</button>
+              </div>
+            )}
             <div className="ff-stages">{data.stages.segments.map((s, i) => <span key={i} className="ff-stage">{s.label} {fmtShort(s.start)}~{fmtShort(s.end)}</span>)}</div>
           </div>
 
