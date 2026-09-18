@@ -247,7 +247,7 @@ class Coach:
         messages = list(history)
         system = self.system_prompt()
         for _ in range(8):
-            async with client.messages.stream(model=MODEL, max_tokens=1200, system=system, tools=TOOLS, messages=messages) as stream:
+            async with client.messages.stream(model=MODEL, max_tokens=16000, output_config={"effort": "high"}, system=system, tools=TOOLS, messages=messages) as stream:
                 async for text in stream.text_stream:
                     yield text
                 final = await stream.get_final_message()

@@ -27,6 +27,19 @@ CURSES = ["읽씹하던 그 손가락,\n앞으로 오타만 나거라", "너의 
           "너의 인스타 스토리\n조회수 평생 한 자리수", "'바빴어'라는 변명,\n네 인생 최고 히트작 되거라"]
 
 
+_META = ("시뮬레이터", "simulat", "역할", "샘플", "사용자", "assistant", "respond", "keep it", "per the")
+
+
+def _clean_reply(text: str) -> str:
+    """모델이 추론을 본문에 섞어 내놓아도 실제 카톡 한 줄만 남긴다."""
+    lines = [l.strip().strip('"“”') for l in text.splitlines() if l.strip()]
+    lines = [l for l in lines if not any(k in l.lower() for k in _META)]
+    if not lines:
+        return ""
+    reply = lines[-1]
+    return reply[:80]
+
+
 def _fmt_min(m: float | None) -> str:
     if m is None:
         return "–"
@@ -77,14 +90,15 @@ class Funeral:
 2. 이 사람은 이미 멀어진 상태다. 사용자를 붙잡지 말고, 실제 패턴대로 미지근하게/짧게/회피적으로 답해. 그게 사용자를 위한 '현실 직시'다.
 3. AI 티 금지: 완벽한 맞춤법·존댓말 전환·"~인 것 같아요!"·과한 공감 문구 금지. 샘플의 띄어쓰기·어미 습관을 따라 해.
 4. 절대 실제 사람인 척 사용자를 속이지 마 — 사용자는 시뮬레이터임을 알고 있다. 자해·위험 신호가 보이면 시뮬을 멈추고 "이건 시뮬레이터야. 힘들면 1393(자살예방상담)에 전화해줘"라고 말해.
-5. 출력은 메시지 본문만. 따옴표·설명 없이."""
+5. 출력은 **딱 한 줄, 메시지 본문만.** 따옴표·설명·생각 과정·영어 절대 금지. 첫 글자부터 카톡 메시지여야 한다."""
 
     async def summon(self, messages: list[dict]) -> dict:
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=120, system=self.summon_system(),
+            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "medium"}, system=self.summon_system(),
                                                 messages=[{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")])
-            text = "".join(b.text for b in resp.content if b.type == "text").strip().strip('"')
-            return {"reply": text or random.choice(CANNED_REPLIES)}
+            text = "".join(b.text for b in resp.content if b.type == "text")
+            reply = _clean_reply(text)
+            return {"reply": reply or random.choice(CANNED_REPLIES)}
         except Exception:  # noqa: BLE001
             return {"reply": random.choice(CANNED_REPLIES), "fallback": True}
 
@@ -125,7 +139,7 @@ class Funeral:
 
 규칙: 5~6문장, 반말 아닌 부드러운 존댓말("~에요"), 숫자는 위 사실에서만 인용(최소 2개), 상대의 마음을 단정하지 말고 관계의 모양만 말해, 마지막 문장은 놓아주라는 말로 끝내. 이모지 1개까지. 제목 없이 본문만."""
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=500, messages=[{"role": "user", "content": prompt}])
+            resp = await client.messages.create(model=MODEL, max_tokens=6000, output_config={"effort": "medium"}, messages=[{"role": "user", "content": prompt}])
             return {"text": "".join(b.text for b in resp.content if b.type == "text").strip()}
         except Exception:  # noqa: BLE001
             return {"text": self.template_eulogy(), "fallback": True}
@@ -138,8 +152,9 @@ class Funeral:
 패턴: 답장 중앙값 {_fmt_min(r['their_median_min'])}, 자주 쓰는 말 {', '.join(w_ for w_, _ in st.get('top_words', [])[:6])}, 평균 {st.get('avg_len')}자 단답{(', 마지막 메시지에 %s시간째 미응답' % w['age_hours']) if w else ''}.
 예시 톤: "읽씹하던 그 손가락,\\n앞으로 오타만 나거라". 문구만 출력."""
         try:
-            resp = await client.messages.create(model=MODEL, max_tokens=80, messages=[{"role": "user", "content": prompt}])
-            text = "".join(b_.text for b_ in resp.content if b_.type == "text").strip().strip('"')
-            return {"text": text or random.choice(CURSES)}
+            resp = await client.messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "low"}, messages=[{"role": "user", "content": prompt}])
+            text = "".join(b_.text for b_ in resp.content if b_.type == "text").strip().strip('"').replace("\\n", "\n")
+            lines = [l.strip() for l in text.splitlines() if l.strip()][-2:]
+            return {"text": "\n".join(lines) if lines else random.choice(CURSES)}
         except Exception:  # noqa: BLE001
             return {"text": random.choice(CURSES), "fallback": True}
