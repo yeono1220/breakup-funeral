@@ -109,9 +109,9 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
               onDragOver={e => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)}
               onDrop={e => { e.preventDefault(); setDrag(false); ingest(() => api.upload(Array.from(e.dataTransfer.files))) }}>
               <Icon name="upload" size={36} className="muted" />
-              <p>{busy ? '읽는 중…' : '카톡 대화 파일(.txt) 드래그 & 드롭'}</p>
+              <p>{busy ? '읽는 중…' : '카톡 대화 파일(.txt) 또는 인스타 DM(.json) 드래그 & 드롭'}</p>
               <span>또는 눌러서 올려줘 · 그 사람과의 1:1 대화방이면 충분해</span>
-              <input type="file" multiple accept=".txt" onChange={e => e.target.files && ingest(() => api.upload(Array.from(e.target.files!)))} />
+              <input type="file" multiple accept=".txt,.json" onChange={e => e.target.files && ingest(() => api.upload(Array.from(e.target.files!)))} />
             </label>
             <div className="up-alt reveal" style={at(4)}>
               {!sampleOpen
@@ -130,7 +130,7 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
             <div className="up-note reveal" style={at(6)}>원문은 분석 서버에 브라우저별로 따로 저장되고, 진단·소환술을 만들 때 일부가 AI에 전달돼. 화면 이름은 가려줄 수 있어.</div>
             <details className="up-note reveal" style={{ ...at(7), maxWidth: 520, margin: '8px auto 0' }}>
               <summary style={{ cursor: 'pointer' }}>카톡에서 내보내는 법</summary>
-              PC: 대화방 → ≡ → 대화 내용 → 내보내기 · Android: ≡ → 설정 → 대화 내용 내보내기 → 텍스트만 · iOS: ≡ → 설정 → 대화 내용 내보내기
+              카톡 PC: 대화방 → ≡ → 대화 내용 → 내보내기 · Android: ≡ → 설정 → 대화 내용 내보내기 → 텍스트만 · iOS: ≡ → 설정 → 대화 내용 내보내기<br />인스타: 설정 → 내 활동 → 정보 다운로드 → 일부 정보 → 메시지 → 형식 <b>JSON</b> → 받은 zip 안 messages/inbox/상대이름/message_1.json (여러 개면 전부)
             </details>
           </>
         )}

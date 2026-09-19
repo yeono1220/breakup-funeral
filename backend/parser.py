@@ -168,9 +168,58 @@ def parse_lines(lines: list[str], room_fallback: str = "") -> Iterator[Message]:
         yield m
 
 
+# ---------------------------------------------------------------- 인스타그램 DM (정보 다운로드 → 메시지 → JSON)
+# messages/inbox/<상대>/message_1.json. 문자열이 UTF-8 바이트를 latin-1로 읽은 꼴(모지바케)로 들어 있어 되돌려야 한글이 나온다.
+_IG_MEDIA_KEYS = (("photos", "사진"), ("videos", "동영상"), ("audio_files", "음성메시지"), ("share", "링크"), ("sticker", "이모티콘"), ("gifs", "이모티콘"))
+
+
+def _ig_fix(s: str) -> str:
+    try:
+        return s.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+
+
+def looks_like_instagram(text: str) -> bool:
+    head = text.lstrip()[:200]
+    return head.startswith("{") and '"participants"' in text[:2000] and '"messages"' in text[:4000]
+
+
+def parse_instagram_json(text: str, room_fallback: str = "") -> list[Message]:
+    import json as _json
+    data = _json.loads(text)
+    parts = [_ig_fix(x.get("name", "")) for x in data.get("participants", [])]
+    room = _ig_fix(data.get("title") or "") or (next((n for n in parts), None) or room_fallback)
+    out: list[Message] = []
+    for m in data.get("messages", []):
+        who = _ig_fix(m.get("sender_name", "") or "")
+        ts = m.get("timestamp_ms")
+        if not who or ts is None:
+            continue
+        text_ = _ig_fix(m.get("content") or "")
+        if not text_:
+            for key, token in _IG_MEDIA_KEYS:
+                if m.get(key):
+                    text_ = token; break
+        if not text_ or m.get("is_unsent"):
+            continue
+        # "OO님이 메시지에 반응했습니다" 같은 시스템 문구는 제외
+        if "reacted" in text_.lower() or "반응했습니다" in text_ or "liked a message" in text_.lower():
+            continue
+        out.append(Message(room=room, sender=who, text=text_, ts=datetime.fromtimestamp(ts / 1000), app="instagram"))
+    out.sort(key=lambda x: x.ts)
+    return out
+
+
 def parse_file_meta(path: str | Path) -> tuple[list[Message], datetime | None]:
-    """(메시지 리스트, 저장한 날짜). 저장한 날짜가 없으면 파일 mtime."""
+    """(메시지 리스트, 저장한 날짜). 저장한 날짜가 없으면 파일 mtime. 카톡 txt 3종 + 인스타 DM JSON."""
     p = Path(path)
+    if p.suffix.lower() == ".json" or p.read_bytes()[:1] == b"{":
+        raw = p.read_text(encoding="utf-8", errors="replace")
+        if looks_like_instagram(raw):
+            msgs = parse_instagram_json(raw, room_fallback=p.parent.name or p.stem)
+            saved = msgs[-1].ts if msgs else datetime.fromtimestamp(p.stat().st_mtime)
+            return msgs, saved
     lines = _read_lines(p)
     saved = parse_saved_at(lines) or datetime.fromtimestamp(p.stat().st_mtime)
     msgs = list(parse_lines(lines, room_fallback=p.stem))

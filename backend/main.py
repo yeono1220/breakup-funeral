@@ -154,7 +154,10 @@ async def upload(files: list[UploadFile] = File(...)):
     for f in files:
         dest = _upload_dir() / Path(f.filename or 'upload.txt').name
         dest.write_bytes(await f.read())
-        msgs, saved = parse_file_meta(dest)
+        try:
+            msgs, saved = parse_file_meta(dest)
+        except Exception as e:  # noqa: BLE001 — 깨진 JSON 등
+            raise HTTPException(400, f"{f.filename}: 읽을 수 없는 파일이야 ({type(e).__name__}). 카톡 txt 내보내기나 인스타 메시지 JSON(message_1.json)을 올려줘")
         db.bump_saved_at(con, saved)
         added += db.insert_messages(con, msgs)
         rooms.append({"file": f.filename, "messages": len(msgs), "room": msgs[0].room if msgs else None,
