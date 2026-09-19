@@ -119,7 +119,7 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
                 : <div className="sample-form">
                     <div className="tiny muted" style={{ marginBottom: 8 }}>6개월 연애 샘플(썸 → 싸움·화해 → 식음 → 정리)을 네 이름으로 보여줄게</div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                      <input className="inp" value={sampleMe} onChange={e => setSampleMe(e.target.value)} placeholder="내 이름 (예: 연오)" maxLength={20} autoFocus
+                      <input className="inp" value={sampleMe} onChange={e => setSampleMe(e.target.value)} placeholder="내 이름" maxLength={20} autoFocus
                         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) ingest(async () => { await api.clear(); return api.loadSample(sampleMe, sampleTarget) }) }} />
                       <input className="inp" value={sampleTarget} onChange={e => setSampleTarget(e.target.value)} placeholder="상대 이름 (선택)" maxLength={20} />
                       <button className="btn btn-rose" disabled={busy} onClick={() => ingest(async () => { await api.clear(); return api.loadSample(sampleMe, sampleTarget) })}>{busy ? '읽는 중…' : '시작'}</button>
