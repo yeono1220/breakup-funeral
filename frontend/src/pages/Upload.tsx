@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Candidate, type Ending, type Sender } from '../api'
+import { api, type Candidate, type Ending, type Sender, type Traits } from '../api'
 import { DrawPad } from '../components/DrawPad'
 import { Char } from '../components/Char'
 import { Icon } from '../components/Icons'
@@ -7,6 +7,12 @@ import { useToast } from '../components/ui'
 
 type Step = 'drop' | 'me' | 'target' | 'persona' | 'portrait'
 const MBTI = ['ISTJ', 'ISFJ', 'INFJ', 'INTJ', 'ISTP', 'ISFP', 'INFP', 'INTP', 'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ']
+const LOOKS = ['강아지상', '고양이상', '토끼상', '여우상', '곰상', '사슴상', '공룡상', '햄스터상']
+const VIBES = ['차가워 보이는데 따뜻함', '따뜻해 보이는데 차가움', '첫인상 그대로', '웃으면 딴사람', '무표정이 기본', '항상 피곤해 보임']
+const TRAITS = ['무심함', '다정함', '장난기', '츤데레', '직설적', '감성적', '논리적', '애교', '무뚝뚝', '회피적', '변덕', '고집', '눈치 빠름', '눈치 없음']
+const MET = ['학교', '직장', '소개팅', '데이팅앱', '동아리·모임', '친구 소개', '동네·우연', 'SNS']
+const TOPICS = ['게임', '운동', '음식·맛집', '여행', '영화·드라마', '음악', '공부·일', '반려동물', '패션', '술', '가족', '미래 얘기']
+const CONTACT_NOW = ['완전 끊김', '가끔 연락', '내가 차단함', '차단당함', '아직 연락 중']
 const ATTACH = [
   { key: 'secure', label: '안정형', d: '연락·거리 둘 다 편안' },
   { key: 'anxious', label: '불안형', d: '답장 늦으면 초조' },
@@ -39,6 +45,9 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
   const [endedAt, setEndedAt] = useState('')
   const [startedAt, setStartedAt] = useState('')
   const [portrait, setPortrait] = useState<string | null>(null)
+  const [traits, setTraits] = useState<Traits>({})
+  const tset = (k: keyof Traits, v: string) => setTraits(t => ({ ...t, [k]: t[k] === v ? null : v }))   // 단일 선택 토글
+  const ttog = (k: 'traits' | 'topics', v: string, max = 5) => setTraits(t => { const cur = t[k] ?? []; return { ...t, [k]: cur.includes(v) ? cur.filter(x => x !== v) : cur.length >= max ? cur : [...cur, v] } })
   const [sampleOpen, setSampleOpen] = useState(false)
   const [sampleMe, setSampleMe] = useState('')
   const [sampleTarget, setSampleTarget] = useState('')
@@ -69,13 +78,13 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
   async function pickTarget(name: string) {
     setTarget(name); await api.setTarget(name)
     const p = await api.persona(name).catch(() => null)
-    if (p) { setMbti(p.mbti); setAttach(p.attachment); setEnding(p.ending ?? null); setContext(p.context ?? ''); setEndedAt(p.ended_at ?? ''); setStartedAt(p.started_at ?? ''); setAlias(p.alias ?? true); setPortrait(p.portrait ?? null) }
+    if (p) { setMbti(p.mbti); setAttach(p.attachment); setEnding(p.ending ?? null); setContext(p.context ?? ''); setEndedAt(p.ended_at ?? ''); setStartedAt(p.started_at ?? ''); setAlias(p.alias ?? true); setPortrait(p.portrait ?? null); setTraits(p.traits ?? {}) }
     setStep('persona')
   }
 
   async function savePersona() {
     if (!target) return
-    await api.setPersona({ person: target, mbti, attachment: attach, ending, context: context || null, ended_at: endedAt || null, started_at: startedAt || null, alias, portrait: portrait ?? undefined })
+    await api.setPersona({ person: target, mbti, attachment: attach, ending, context: context || null, ended_at: endedAt || null, started_at: startedAt || null, alias, portrait: portrait ?? undefined, traits })
   }
   async function toPortrait() { await savePersona(); setStep('portrait') }
   async function finish() {
@@ -156,7 +165,7 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
         {step === 'persona' && (
           <div className="card reveal" style={{ textAlign: 'left' }}>
             <h3>故 {target}, 어떤 사람이었어?</h3>
-            <p className="sub">몰라도 돼. 여기 적는 건 통계엔 안 쓰고, 영정·X 소환술 말투에만 반영돼.</p>
+            <p className="sub">몰라도 돼. 여기 적는 건 통계엔 안 쓰고, X 소환술·코치·진단서가 '사람'을 그리는 데만 써. 다 선택이야.</p>
             <div className="field-label reveal" style={at(1)}>MBTI</div>
             <div className="mbti-grid reveal" style={at(2)}>
               {MBTI.map(m => <button key={m} className={'pick' + (mbti === m ? ' on' : '')} onClick={() => setMbti(mbti === m ? null : m)}>{m}</button>)}
@@ -169,6 +178,21 @@ export function Upload({ onStart, jumpTo }: { onStart: (me: string, target: stri
                 </button>
               ))}
             </div>
+            <div className="field-label reveal" style={at(5)}>생김새·인상 <span className="faint">— 소환술이 이 사람을 더 그 사람답게</span></div>
+            <div className="chips reveal" style={at(5)}>{LOOKS.map(v => <button key={v} className={'pick' + (traits.look === v ? ' on' : '')} onClick={() => tset('look', v)}>{v}</button>)}</div>
+            <div className="chips reveal" style={{ ...at(5), marginTop: 6 }}>{VIBES.map(v => <button key={v} className={'pick' + (traits.vibe === v ? ' on' : '')} onClick={() => tset('vibe', v)}>{v}</button>)}</div>
+            <div className="field-label reveal" style={at(5)}>성격·말투 <span className="faint">(최대 5개)</span></div>
+            <div className="chips reveal" style={at(5)}>{TRAITS.map(v => <button key={v} className={'pick' + (traits.traits?.includes(v) ? ' on' : '')} onClick={() => ttog('traits', v)}>{v}</button>)}</div>
+            <div className="field-label reveal" style={at(5)}>서로 뭐라고 불렀어? <span className="faint">— 소환술에서 이 호칭으로 불러</span></div>
+            <div className="row reveal" style={{ ...at(5), display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input className="inp" value={traits.call_me ?? ''} onChange={e => setTraits(t => ({ ...t, call_me: e.target.value }))} placeholder="이 사람이 나를 (예: 야, 자기, 오빠, 이름)" maxLength={12} />
+              <input className="inp" value={traits.call_them ?? ''} onChange={e => setTraits(t => ({ ...t, call_them: e.target.value }))} placeholder="내가 이 사람을" maxLength={12} />
+            </div>
+            <div className="field-label reveal" style={at(5)}>어디서 만났고, 뭘로 주로 떠들었어? <span className="faint">(얘기는 최대 5개)</span></div>
+            <div className="chips reveal" style={at(5)}>{MET.map(v => <button key={v} className={'pick' + (traits.met === v ? ' on' : '')} onClick={() => tset('met', v)}>{v}</button>)}</div>
+            <div className="chips reveal" style={{ ...at(5), marginTop: 6 }}>{TOPICS.map(v => <button key={v} className={'pick' + (traits.topics?.includes(v) ? ' on' : '')} onClick={() => ttog('topics', v)}>{v}</button>)}</div>
+            <div className="field-label reveal" style={at(5)}>지금은?</div>
+            <div className="chips reveal" style={at(5)}>{CONTACT_NOW.map(v => <button key={v} className={'pick' + (traits.contact_now === v ? ' on' : '')} onClick={() => tset('contact_now', v)}>{v}</button>)}</div>
             <div className="field-label reveal" style={at(5)}>어떻게 끝났어? <span className="faint">— 데이터 판정보다 이걸 우선해</span></div>
             <div className="chips reveal" style={at(6)}>
               {ENDINGS.map(e => (

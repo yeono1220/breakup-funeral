@@ -256,6 +256,8 @@ class PersonaBody(BaseModel):
     started_at: str | None = None    # YYYY-MM-DD 썸/관계 시작일 (선택) — 향년 계산 기준
     alias: bool = True               # 화면에서 가명 표시
     portrait: str | None = None      # data URL (사용자가 그린/올린 X 얼굴)
+    traits: dict | None = None       # 선택형 페르소나: look(동물상), vibe(인상), traits[](성격·말투), met(만난 경로),
+                                     #   call_me/call_them(호칭), topics[](자주 하던 얘기), contact_now(지금 연락 상태)
     note: str | None = None          # (구버전 호환)
 
 
@@ -275,6 +277,8 @@ async def set_persona(body: PersonaBody):
     incoming = {k: v for k, v in body.model_dump().items() if k != "person"}
     if incoming.get("portrait") is None and prev.get("portrait"):   # 초상화 미포함 요청이면 기존 값 유지
         incoming["portrait"] = prev["portrait"]
+    if incoming.get("traits") is None and prev.get("traits"):
+        incoming["traits"] = prev["traits"]
     cur[body.person] = incoming
     db.set_setting(con, "persona", json.dumps(cur, ensure_ascii=False))
     out = dict(incoming); out["portrait"] = bool(out.get("portrait"))
@@ -286,7 +290,7 @@ async def get_persona(person: str):
     p = _persona_of(_con(), person)
     return {"person": person, "mbti": p.get("mbti"), "attachment": p.get("attachment"), "ending": p.get("ending"),
             "context": p.get("context"), "ended_at": p.get("ended_at"), "started_at": p.get("started_at"), "alias": p.get("alias", True),
-            "portrait": p.get("portrait"), "ending_label": ENDING_LABEL.get(p.get("ending"))}
+            "portrait": p.get("portrait"), "ending_label": ENDING_LABEL.get(p.get("ending")), "traits": p.get("traits")}
 
 
 @app.delete("/data")

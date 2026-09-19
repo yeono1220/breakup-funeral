@@ -56,7 +56,9 @@ export type Persona = {
   mbti: string | null; attachment: string | null
   ending?: Ending | null; context?: string | null; ended_at?: string | null; started_at?: string | null
   alias?: boolean; portrait?: string | null; ending_label?: string | null; note?: string | null
+  traits?: Traits | null
 }
+export type Traits = { look?: string | null; vibe?: string | null; traits?: string[]; met?: string | null; call_me?: string | null; call_them?: string | null; topics?: string[]; contact_now?: string | null }
 export type Amulet = { hanja: string; reading: string; meaning: string; attachment: string | null; attachment_label: string; line: string; text: string; fallback?: boolean }
 
 export type Sender = { sender: string; n: number }

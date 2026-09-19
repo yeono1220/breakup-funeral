@@ -151,7 +151,7 @@ class Coach:
                 "\n\n## 관계 요약 카드 (툴 get_relationship_brief와 동일, 매 턴 최신)\n" +
                 json.dumps(b, ensure_ascii=False, default=str) +
                 "\n\n## 사용자가 알려준 이별 상황 (데이터 판정과 다르면 이걸 우선)\n" +
-                json.dumps({k: self.persona.get(k) for k in ("ending", "context", "started_at", "ended_at", "mbti", "attachment")}, ensure_ascii=False) +
+                json.dumps({k: self.persona.get(k) for k in ("ending", "context", "started_at", "ended_at", "mbti", "attachment", "traits")}, ensure_ascii=False) +
                 "\n\n주의: 위 카드는 요약이야. 특정 시점·메시지·기간에 대한 질문은 반드시 get_timeline / search_messages / get_context / get_period 로 원본을 확인하고 msg_id를 인용해.")
 
     # ------------------------------------------------------------ tools

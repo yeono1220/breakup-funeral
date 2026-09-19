@@ -122,6 +122,26 @@ class Funeral:
             bits.append(f"사용자가 설명한 상황: {p['context'][:400]}")
         return "\n".join(bits) if bits else "(사용자가 추가로 알려준 이별 상황 없음)"
 
+    def persona_sheet(self) -> str:
+        """사용자가 선택한 상대 정보(동물상·성격·호칭·만난 경로·화제)를 한 블록으로. 소환술이 말투 통계 위에 '사람'을 얹는 재료."""
+        t = self.persona.get("traits") or {}
+        bits = []
+        if self.persona.get("mbti") or self.persona.get("attachment"):
+            bits.append("- 성향: " + ", ".join(x for x in [self.persona.get("mbti"), ATTACH_KO.get(self.persona.get("attachment") or "")] if x))
+        if t.get("look") or t.get("vibe"):
+            bits.append("- 인상: " + " · ".join(x for x in [t.get("look"), t.get("vibe")] if x))
+        if t.get("traits"):
+            bits.append("- 성격·말투(사용자가 고름): " + ", ".join(t["traits"][:6]))
+        if t.get("call_me") or t.get("call_them"):
+            bits.append(f"- 호칭: 이 사람은 나를 '{t.get('call_me') or '?'}'라고 불렀고, 나는 이 사람을 '{t.get('call_them') or '?'}'라고 불렀다 — 답할 때 이 호칭을 쓴다")
+        if t.get("met"):
+            bits.append(f"- 만난 경로: {t['met']}")
+        if t.get("topics"):
+            bits.append("- 자주 하던 얘기: " + ", ".join(t["topics"][:6]))
+        if t.get("contact_now"):
+            bits.append(f"- 지금 연락 상태: {t['contact_now']}")
+        return "\n".join(bits) if bits else "(사용자가 고른 정보 없음 — 말투 데이터만으로 연기)"
+
     def _started(self) -> datetime | None:
         s = self.persona.get("started_at")
         try:
@@ -255,6 +275,9 @@ class Funeral:
 ## {self.target}의 말투 (카톡 {p['n']}개에서 코드로 계산)
 {chr(10).join(self._profile_lines())}
 - 성격 힌트(사용자 입력): {persona_line or '없음'}
+
+## 이 사람에 대해 사용자가 알려준 것
+{self.persona_sheet()}
 - 관계 상태: {b['stages']['current_label']}. 상대 답장 중앙값 {_fmt_min(b['symmetry']['reply']['their_median_min'])}.
 - {self.context_line().replace(chr(10), ' / ')}
   → 데이터와 다르면 사용자 진술을 우선한다. 끝난 관계면 끝난 사람처럼: 붙잡지 않고, 미지근하고, 설명이 짧다.
