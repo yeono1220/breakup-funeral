@@ -10,7 +10,7 @@ from contextvars import ContextVar
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import db
@@ -51,6 +51,37 @@ async def session_middleware(request: Request, call_next):
 
 def _sid() -> str | None:
     return _SID.get()
+
+
+# LLM을 부르는 라우트는 세션당·전체 호출 수를 제한한다 (키 잔액 보호). 메모리 슬라이딩 윈도우, 재시작하면 리셋.
+from collections import deque as _deque
+from time import time as _now
+_LLM_PATHS = ("/chat", "/summon", "/eulogy", "/curse", "/legends", "/epitaph", "/first_insight")
+_LIMITS = {"session_min": 12, "session_hour": 120, "global_hour": 900}
+_hits: dict[str, _deque] = {}
+
+
+def _rate_ok(key: str, limit: int, window_s: float) -> bool:
+    q = _hits.setdefault(key, _deque())
+    t = _now()
+    while q and q[0] < t - window_s:
+        q.popleft()
+    if len(q) >= limit:
+        return False
+    q.append(t)
+    return True
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    if any(path.startswith(p) for p in _LLM_PATHS) and request.method != "OPTIONS":
+        who = request.headers.get("x-session") or (request.client.host if request.client else "anon")
+        if not (_rate_ok(f"s:{who}:m", _LIMITS["session_min"], 60) and _rate_ok(f"s:{who}:h", _LIMITS["session_hour"], 3600)):
+            return JSONResponse({"detail": "너무 빨라. 1분만 쉬었다 다시 눌러줘"}, status_code=429)
+        if not _rate_ok("g:h", _LIMITS["global_hour"], 3600):
+            return JSONResponse({"detail": "지금 사람이 몰려서 AI가 잠깐 쉬는 중이야. 조금 있다 다시"}, status_code=429)
+    return await call_next(request)
 
 
 def _con():
@@ -280,8 +311,8 @@ async def relationship_view(person: str):
     rel_check = _rel_msgs(all_msgs, me, person)
     if sum(1 for x in rel_check if x.sender == me) < 5:
         raise HTTPException(400, f"{person}와(과) 주고받은 1:1 대화가 거의 없어요 (단톡에서만 등장). 1:1 대화방 txt를 올리거나 다른 사람을 골라주세요.")
-    r = relationship.build(all_msgs, me, person, db.now_ts(con))
     p = _persona_of(con, person)
+    r = relationship.build(all_msgs, me, person, db.now_ts(con), started_at=relationship.parse_date(p.get("started_at")))
     ending = p.get("ending")
     # 사용자가 알려준 이별 컨텍스트가 데이터 판정을 덮어쓴다 (회피형 X = 데이터상 '썸'으로 보이는 경우 등)
     # 향년 시작점: 사용자가 찍은 시작일 > 데이터의 첫 썸/연애 구간 시작 > 첫 메시지
@@ -432,7 +463,7 @@ async def epitaph(refresh: bool = False):
         return json.loads(cached)
     all_msgs = db.all_messages(con)
     rel = _rel_msgs(all_msgs, me, target)
-    r = relationship.build(all_msgs, me, target, db.now_ts(con))
+    r = relationship.build(all_msgs, me, target, db.now_ts(con), started_at=relationship.parse_date(p.get("started_at")))
     first_warm = next((sg["start"] for sg in r["stages"]["segments"] if sg["stage"] in ("some", "dating")), None)
     uc = {"ending": p.get("ending"), "context": p.get("context"), "ended_at": p.get("ended_at"), "started_at": p.get("started_at")}
     causes = diagnose_causes(rel, me, target, db.now_ts(con), uc).get("causes") or []

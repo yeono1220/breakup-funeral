@@ -105,7 +105,7 @@ class Funeral:
         self.all, self.me, self.target, self.now = all_msgs, me, target, now
         self.persona = persona or {}
         self.rel = relationship_messages(all_msgs, me, target)
-        self.brief = rel_mod.build(all_msgs, me, target, now)
+        self.brief = rel_mod.build(all_msgs, me, target, now, started_at=rel_mod.parse_date(self.persona.get("started_at")))
         self._turns_cache: list[dict] | None = None
         self._profile_cache: dict | None = None
 

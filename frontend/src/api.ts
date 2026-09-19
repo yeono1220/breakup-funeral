@@ -13,6 +13,7 @@ const H = () => ({ 'Content-Type': 'application/json', 'X-Anon': anonId() })
 const f = (url: string, init: RequestInit = {}) => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), 'X-Session': anonId() } })
 
 async function j<T>(r: Response): Promise<T> {
+  if (r.status === 429) throw new Error((await r.json().catch(() => ({}))).detail ?? '너무 빨라. 1분만 쉬었다가')
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return r.json()
 }

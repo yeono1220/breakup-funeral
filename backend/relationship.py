@@ -32,18 +32,26 @@ def candidates(all_msgs: list[Message], me: str) -> list[dict]:
     return out
 
 
-def build(all_msgs: list[Message], me: str, target: str, now: datetime, moods: dict[str, float] | None = None) -> dict:
+def build(all_msgs: list[Message], me: str, target: str, now: datetime, moods: dict[str, float] | None = None,
+          started_at: datetime | None = None) -> dict:
     rel = relationship_messages(all_msgs, me, target)
     if not rel:
         return {"target": target, "error": "no messages with target"}
     oth = other_messages(all_msgs, rel)
     base = baseline_q(oth, me)
-    series = weekly_series(rel, me, target, base, moods)
+    series = weekly_series(rel, me, target, base, moods, started_at=started_at)
+    temp_now = temperature_now(rel, me, target, base, now=now, started_at=started_at)
+    # 화면에 보이는 '지금 온도'는 차트의 마지막 점(3주 평활)과 같은 숫자여야 한다. 14일 창 원값은 temp_window에.
+    valid = [w for w in series if w["temp"] is not None]
+    if valid:
+        temp_now["temp_window"] = temp_now.get("temp")
+        temp_now["temp"] = valid[-1]["temp"]
+        temp_now["delta_week"] = round(valid[-1]["temp"] - valid[-2]["temp"], 1) if len(valid) >= 2 else None
     return {
         "me": me, "target": target,
         "n_messages": len(rel),
         "range": [rel[0].ts.isoformat(), rel[-1].ts.isoformat()],
-        "temperature": temperature_now(rel, me, target, base, now=now),
+        "temperature": temp_now,
         "weekly": series,
         "events": updown_events(series, rel, target),
         "stages": detect_stages(series),
@@ -54,6 +62,13 @@ def build(all_msgs: list[Message], me: str, target: str, now: datetime, moods: d
         "last_message": {"id": rel[-1].id, "sender": rel[-1].sender, "text": rel[-1].text, "ts": rel[-1].ts.isoformat()},
         "meta": {"weights": WEIGHTS, "labels": LABELS, "baseline_q": base, "now": now.isoformat()},
     }
+
+
+def parse_date(s: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
 
 
 def compare(all_msgs: list[Message], me: str, a: str, b: str, now: datetime) -> dict:

@@ -42,6 +42,7 @@ export function CoachChat({ name, me, target, msgs, setMsgs, onContextUpdated, o
     const paint = (extra?: CoachMsg) => setMsgs([...hist, { role: 'assistant', content: acc.replace(HL, '').trimEnd() }, ...(extra ? [extra] : [])])
     try {
       const r = await api.chat(hist.filter(m => !m.sys).map(m => ({ role: m.role, content: m.content })))
+      if (r.status === 429) throw new Error((await r.json().catch(() => ({}))).detail ?? '너무 빨라. 1분만 쉬었다가')
       if (r.status === 400) throw new Error('서버에 네 데이터가 없어 — 서버가 쉬었다 깨면서 지워졌을 수 있어. 카톡을 다시 올려줘 (내 장례식 → 업로드)')
       if (!r.ok || !r.body) throw new Error(`서버 오류 ${r.status}`)
       const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ''

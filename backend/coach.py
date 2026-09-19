@@ -124,7 +124,7 @@ class Coach:
     # ------------------------------------------------------------ brief (매 턴 주입)
     def brief(self) -> dict:
         if self._brief_cache is None:
-            r = rel_mod.build(self.all, self.me, self.target, self.now)
+            r = rel_mod.build(self.all, self.me, self.target, self.now, started_at=rel_mod.parse_date(self.persona.get("started_at")))
             self._brief_cache = {
                 "me": self.me, "target": self.target, "now": _fmt_ts(self.now),
                 "n_messages": r["n_messages"], "range": r["range"],
@@ -161,7 +161,7 @@ class Coach:
             return self.brief()
 
         if name == "get_timeline":
-            r = rel_mod.build(self.all, me, tg, self.now)
+            r = rel_mod.build(self.all, me, tg, self.now, started_at=rel_mod.parse_date(self.persona.get("started_at")))
             weeks = r["weekly"]
             if (n := args.get("weeks")):
                 weeks = weeks[-int(n):]

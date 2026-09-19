@@ -213,8 +213,16 @@ def compose(cur: dict, prev: dict | None, base: tuple[float, float], mood: float
     return {"temp": temp, "components": detail}
 
 
+def _since(rel_msgs: list[Message], started_at: datetime | None) -> list[Message]:
+    """평시 기준(norm)은 관계 시작 이후로만 — 사귀기 전 잡담이 '평시'가 되면 안 된다."""
+    if not started_at:
+        return rel_msgs
+    sub_ = [m for m in rel_msgs if m.ts >= started_at]
+    return sub_ if len(sub_) >= 50 else rel_msgs
+
+
 def temperature_now(rel_msgs: list[Message], me: str, target: str, base: tuple[float, float],
-                    now: datetime | None = None, mood: float | None = None) -> dict:
+                    now: datetime | None = None, mood: float | None = None, started_at: datetime | None = None) -> dict:
     """현재 온도: 최근 14일 창, 추세는 이전 28일 대비. 지난주 대비 Δ 포함."""
     if not rel_msgs:
         return {"temp": None}
@@ -223,7 +231,7 @@ def temperature_now(rel_msgs: list[Message], me: str, target: str, base: tuple[f
     prev_w = [m for m in rel_msgs if now - timedelta(days=42) < m.ts <= now - timedelta(days=14)]
     last_w = [m for m in rel_msgs if now - timedelta(days=21) < m.ts <= now - timedelta(days=7)]
     last_prev = [m for m in rel_msgs if now - timedelta(days=49) < m.ts <= now - timedelta(days=21)]
-    nm = norms(rel_msgs, target); npd = nm["per_day"]
+    nm = norms(_since(rel_msgs, started_at), target); npd = nm["per_day"]
     cur = compose(window_metrics(cur_w, me, target, 14), window_metrics(prev_w, me, target, 28) if prev_w else None, base, mood, nm) \
         if len(cur_w) >= MIN_MSGS_PER_WEEK else {"temp": None, "components": {}}
     last = compose(window_metrics(last_w, me, target, 14), window_metrics(last_prev, me, target, 28) if last_prev else None, base, mood, nm) \
@@ -253,7 +261,7 @@ def _week_start(d: datetime) -> datetime:
 
 
 def weekly_series(rel_msgs: list[Message], me: str, target: str, base: tuple[float, float],
-                  moods: dict[str, float] | None = None) -> list[dict]:
+                  moods: dict[str, float] | None = None, started_at: datetime | None = None) -> list[dict]:
     """주별 온도·지표. 데이터 없는 주도 채움(temp=None)."""
     if not rel_msgs:
         return []
@@ -261,7 +269,7 @@ def weekly_series(rel_msgs: list[Message], me: str, target: str, base: tuple[flo
     for m in rel_msgs:
         by_week[_week_start(m.ts)].append(m)
     start, end = _week_start(rel_msgs[0].ts), _week_start(rel_msgs[-1].ts)
-    nm = norms(rel_msgs, target)
+    nm = norms(_since(rel_msgs, started_at), target)
     weeks = []
     w = start
     while w <= end:

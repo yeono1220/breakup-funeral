@@ -1,6 +1,6 @@
 /** 공동묘지 메인 씬: 잔디 언덕 3겹 위에 묘비를 세 줄로 세운다. 묘비를 누르면 비문·헌화·방명록 카드가 뜬다.
  *  자리 배정: 내 묘비 → 헌화 많은 순으로 앞줄부터. 씬에 못 들어간 나머지는 아래 목록에서. */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Tomb } from '../api'
 import { GrassField } from './GrassField'
 import { Icon } from './Icons'
@@ -10,16 +10,32 @@ const ROWS = [
   { y: 296, scale: 0.8, xs: [110, 215, 320, 425, 530, 635, 730] },         // 중간 언덕
   { y: 356, scale: 1.0, xs: [95, 225, 355, 485, 615, 735] },               // 앞 언덕
 ]
+// 폰: 4:3로 세워서 좌우가 잘리므로(보이는 x ≈ 100~700) 두 줄·큰 묘비만
+const ROWS_M = [
+  { y: 288, scale: 1.0, xs: [165, 320, 480, 635] },
+  { y: 352, scale: 1.25, xs: [225, 400, 575] },
+]
 export const SCENE_CAP = ROWS.reduce((n, r) => n + r.xs.length, 0)
+
+function useNarrow(px = 560) {
+  const [n, setN] = useState(() => typeof window !== 'undefined' && window.innerWidth <= px)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${px}px)`)
+    const on = () => setN(mq.matches)
+    on(); mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [px])
+  return n
+}
 
 const jit = (id: number, k: number) => (((id * 9301 + k * 49297) % 233280) / 233280 - 0.5)
 
-export function placeTombs(tombs: Tomb[]) {
+export function placeTombs(tombs: Tomb[], rows: { y: number; scale: number; xs: number[] }[] = ROWS) {
   const order = [...tombs].sort((a, b) => Number(b.mine) - Number(a.mine) || b.flowers - a.flowers)
   const slots: { x: number; y: number; s: number }[] = []
-  for (const r of [...ROWS].reverse()) for (const x of r.xs) slots.push({ x, y: r.y, s: r.scale })   // 앞줄부터
+  for (const r of [...rows].reverse()) for (const x of r.xs) slots.push({ x, y: r.y, s: r.scale })   // 앞줄부터
   if (order[0]?.mine) {   // 내 묘비는 앞줄 가운데
-    const mid = Math.floor(ROWS[2].xs.length / 2)
+    const mid = Math.floor(rows[rows.length - 1].xs.length / 2)
     ;[slots[0], slots[mid]] = [slots[mid], slots[0]]
   }
   return order.slice(0, slots.length).map((t, i) => ({ t, x: slots[i].x + jit(t.id, 1) * 26, y: slots[i].y + jit(t.id, 2) * 8, s: slots[i].s }))
@@ -28,7 +44,8 @@ export function placeTombs(tombs: Tomb[]) {
 export function CemeteryScene({ tombs, selected, onSelect, onFlower, onGuest }: {
   tombs: Tomb[]; selected: Tomb | null; onSelect: (t: Tomb | null) => void; onFlower: (t: Tomb) => void; onGuest: (t: Tomb) => void
 }) {
-  const placed = useMemo(() => placeTombs(tombs), [tombs])
+  const narrow = useNarrow()
+  const placed = useMemo(() => placeTombs(tombs, narrow ? ROWS_M : ROWS), [tombs, narrow])
   // 뒤에 있는(작은) 묘비가 앞 묘비에 가리도록 y 오름차순으로 그린다
   const drawn = [...placed].sort((a, b) => a.y - b.y)
   const sel = selected && placed.find(p => p.t.id === selected.id)
@@ -64,7 +81,7 @@ export function CemeteryScene({ tombs, selected, onSelect, onFlower, onGuest }: 
       </svg>
       {tombs.length === 0 && <div className="cem-empty">아직 아무도 잠들지 않았어. 첫 묘비를 세워줘</div>}
       {sel && (
-        <div className="cem-card fade-in" style={{ left: `${Math.min(78, Math.max(22, sel.x / 8))}%` }}>
+        <div className="cem-card fade-in" style={{ left: narrow ? '50%' : `${Math.min(78, Math.max(22, sel.x / 8))}%` }}>
           <div className="cc-meta">묘비 #{sel.t.id}{sel.t.mine ? ' · 내 관계' : ''}{sel.t.days ? ` · 향년 ${sel.t.days}일` : ''} · {sel.t.kind === 'curse' ? '저주봉인' : '헌화'}{sel.t.hanja && <span className="legend-amulet">符 {sel.t.hanja}</span>}</div>
           <div className="tomb-epitaph" style={{ minHeight: 0, marginBottom: 8 }}>{sel.t.epitaph}</div>
           <div className="tomb-meta">
